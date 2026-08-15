@@ -1,0 +1,55 @@
+# gitleaks configuration for a public infrastructure repo.
+#
+# The default ruleset catches API-shaped tokens. This repo's realistic leak
+# paths are different in kind: an action that configures something
+# authenticated carries the credential as an argument. Those rules are added
+# below.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "nmcli-wifi-psk"
+description = "Wi-Fi PSK passed to nmcli on the command line"
+regex = '''wifi-sec\.psk\s+["']?[^\s"']{8,}'''
+tags = ["wifi", "credential"]
+
+[[rules]]
+id = "kickstart-rootpw"
+description = "Kickstart rootpw or user password, plaintext or hashed"
+regex = '''(?i)^\s*(rootpw|user\s+.*--password)\s+(?!.*PLACEHOLDER)(--iscrypted\s+)?\S+'''
+path = '''\.ks$'''
+tags = ["kickstart", "credential"]
+
+[[rules]]
+id = "luks-passphrase"
+description = "LUKS passphrase inline in autopart or cryptsetup"
+regex = '''(?i)(--passphrase[= ]|luks[-_]?pass(word|phrase)[= ])(?!PLACEHOLDER)\S+'''
+tags = ["luks", "credential"]
+
+[[rules]]
+id = "wireguard-private-key"
+description = "WireGuard private key"
+regex = '''(?i)privatekey\s*=\s*[A-Za-z0-9+/]{42,}='''
+tags = ["vpn", "credential"]
+
+[[rules]]
+id = "homelab-internal-host"
+description = "Internal hostname or RFC1918 endpoint — recon, not a secret, but it points at a system that is not this laptop"
+regex = '''(?i)\b((10\.\d{1,3}\.\d{1,3}\.\d{1,3})|(192\.168\.\d{1,3}\.\d{1,3})|(172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}))\b'''
+tags = ["homelab", "recon"]
+
+[allowlist]
+description = "Documentation may name these patterns in order to warn about them"
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''^local/.*\.example$''',
+  '''^VENDOR\.md$''',
+]
+regexes = [
+  '''PLACEHOLDER''',
+  # RFC5737 / RFC3927 documentation addresses, safe to use in examples
+  '''192\.0\.2\.''',
+  '''198\.51\.100\.''',
+  '''203\.0\.113\.''',
+]

@@ -1,0 +1,26 @@
+# Secrets, identity, host-specific values.
+# Everything authenticated is sourced from here, never inlined into a script.
+# Retrofitting this would mean rewriting history — so it is in from commit one.
+# Note the trailing /* — excluding "local/" outright stops git descending into
+# the directory at all, and the negations below would silently never apply.
+local/*
+!local/README.md
+!local/*.example
+
+# Kickstart files hold rootpw, user password hashes and LUKS passphrases.
+# The committed template uses placeholders; a generated one never gets committed.
+test/*.generated.ks
+
+# Audit logs — the agent's own command history, machine-local by nature.
+.claude/audit/
+*.jsonl
+
+# Python bytecode. The hooks run as scripts, never as an imported package,
+# so nothing here is worth tracking.
+__pycache__/
+*.py[co]
+
+# Editor and OS noise
+.DS_Store
+*.swp
+*~

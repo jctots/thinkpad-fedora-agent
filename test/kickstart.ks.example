@@ -1,0 +1,48 @@
+# Kickstart template for the VM test harness.
+#
+# THIS FILE IS COMMITTED. The generated copy is not.
+#
+# Kickstart legitimately holds rootpw, the user password hash (crackable
+# offline) and the LUKS passphrase. That makes it the single most likely file
+# in this repo to leak a credential, so every such field here is a PLACEHOLDER
+# substituted at generation time from local/secrets.env:
+#
+#   scripts/gen-kickstart.sh          # writes test/vm.generated.ks (gitignored)
+#
+# .gitleaks.toml has a rule that fails the commit if a real value lands in a
+# .ks file, and .gitignore excludes *.generated.ks. Both, deliberately.
+
+text
+lang en_US.UTF-8
+keyboard de
+timezone Europe/Berlin --utc
+
+# --- accounts -----------------------------------------------------------------
+# Hashes, never plaintext. Generate with:
+#   python3 -c 'import crypt,getpass; print(crypt.crypt(getpass.getpass(), crypt.mksalt(crypt.METHOD_SHA512)))'
+rootpw --iscrypted PLACEHOLDER_KS_ROOTPW_HASH
+user --name=PLACEHOLDER_KS_USER_NAME --groups=wheel --iscrypted --password=PLACEHOLDER_KS_USER_PW_HASH
+
+# --- disk ---------------------------------------------------------------------
+# The VM disk, not the laptop. Explicit device so a stray run cannot find
+# another target.
+ignoredisk --only-use=vda
+clearpart --all --initlabel --drives=vda
+autopart --type=btrfs --encrypted --passphrase=PLACEHOLDER_LUKS_PASSPHRASE
+
+bootloader --location=mbr --boot-drive=vda
+
+# --- install source -----------------------------------------------------------
+# Silverblue installs from an ostree container image, not a package set.
+ostreecontainer --url=quay.io/fedora/fedora-silverblue:latest --no-signature-verification
+
+network --bootproto=dhcp --device=link --activate
+firewall --enabled --service=ssh
+selinux --enforcing
+
+reboot
+
+%post --log=/var/log/ks-post.log
+# Keep this minimal. Everything that can be done by install.sh after first boot
+# should be — a %post section is the least testable place in the whole repo.
+%end

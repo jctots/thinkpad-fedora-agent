@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Pre-commit secret scan.
+#
+# Enable with:  git config core.hooksPath .githooks
+# (scripts/install-hooks.sh does this)
+#
+# This is one of the three guardrails that have to be in place from commit one,
+# because retrofitting them means rewriting history.
+
+set -euo pipefail
+
+fail() { printf '\n\033[31mpre-commit: %s\033[0m\n' "$1" >&2; exit 1; }
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+
+pre-commit: gitleaks not found.
+
+This repo is public and commits configuration actions that can carry
+credentials as arguments. Install it before committing:
+
+    rpm-ostree install gitleaks     # layered, needs a reboot
+    # or, no reboot:
+    toolbox run sudo dnf install gitleaks
+
+To commit anyway (you are asserting you have read the diff yourself):
+
+    SKIP_GITLEAKS=1 git commit ...
+
+EOF
+    [ "${SKIP_GITLEAKS:-0}" = "1" ] || exit 1
+    printf 'pre-commit: gitleaks skipped by SKIP_GITLEAKS=1\n' >&2
+    exit 0
+fi
+
+printf 'pre-commit: scanning staged changes for secrets...\n'
+
+if ! gitleaks protect --staged --redact --config .gitleaks.toml --verbose; then
+    fail "gitleaks found a secret in the staged changes. Nothing was committed.
+
+Do not fix this by editing the commit. Move the value into local/ and source
+it, then restage. If it is a false positive, add a narrow allowlist entry to
+.gitleaks.toml in the same commit, so the exception is reviewable."
+fi
+
+printf 'pre-commit: clean\n'

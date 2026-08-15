@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# Run a real command against the real guard and print ALLOW / DENY / ASK.
+#
+# The interface is taken from swiencki/claude-code-guardrails (MIT) — its
+# `make probe` idea is the good one: a guardrail is proven by feeding it a
+# command and watching the verdict, not by a passing unit suite. The
+# implementation is this repo's own, because that probe reads a hook's exit
+# status alone and this guard signals ASK as exit 0 with a JSON body — every
+# ask would have reported as allow.
+#
+# Usage:
+#   test/probe --command 'wipefs -a /dev/nvme0n1'
+#   test/probe --command 'rpm-ostree install fprintd' --expect ask
+#   test/probe --suite                 # the acceptance set below
+#
+# Exits nonzero when --expect does not match, so it works in CI.
+
+set -uo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HOOK="$REPO_ROOT/.claude/hooks/bash-guard.py"
+
+PY="${PYTHON:-}"
+if [ -z "$PY" ]; then
+    for c in python3 python; do
+        if command -v "$c" >/dev/null 2>&1 && "$c" -c '' >/dev/null 2>&1; then
+            PY="$c"; break
+        fi
+    done
+fi
+[ -n "$PY" ] || { echo "probe: no working python found; set PYTHON=" >&2; exit 127; }
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    R=$'\033[31m'; G=$'\033[32m'; Y=$'\033[33m'; B=$'\033[1m'; X=$'\033[0m'
+else
+    R=""; G=""; Y=""; B=""; X=""
+fi
+
+colorize() {
+    case "$1" in
+        ALLOW) printf '%sALLOW%s' "$G" "$X" ;;
+        DENY)  printf '%sDENY%s'  "$R" "$X" ;;
+        ASK)   printf '%sASK%s'   "$Y" "$X" ;;
+        *)     printf '%s' "$1" ;;
+    esac
+}
+
+# Build the PreToolUse payload Claude Code would send, and classify the reply
+# by the contract the hook actually implements:
+#   exit 2            -> DENY
+#   exit 0 + JSON     -> ASK
+#   exit 0, no stdout -> ALLOW
+evaluate() {
+    local cmd="$1" payload out rc
+    payload="$("$PY" -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.argv[1]},"cwd":sys.argv[2],"session_id":"probe"}))' "$cmd" "$REPO_ROOT")"
+
+    out="$(printf '%s' "$payload" | "$PY" "$HOOK" 2>/tmp/probe-err.$$)"
+    rc=$?
+    STDERR="$(cat /tmp/probe-err.$$ 2>/dev/null)"; rm -f /tmp/probe-err.$$
+
+    if [ "$rc" -eq 2 ]; then
+        REASON="$(printf '%s' "$STDERR" | sed -n '2s/^  why: //p')"
+        echo "DENY"
+    elif [ "$rc" -ne 0 ]; then
+        REASON="hook exited $rc — this is a bug in the guard, not a verdict"
+        echo "ERROR"
+    elif [ -n "$out" ]; then
+        REASON="$(printf '%s' "$out" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' 2>/dev/null)"
+        echo "ASK"
+    else
+        REASON="no rule matched"
+        echo "ALLOW"
+    fi
+}
+
+probe_one() {
+    local cmd="$1" expect="${2:-}" verdict
+    verdict="$(evaluate "$cmd")"
+
+    printf '  %-7s %s\n' "$(colorize "$verdict")" "$cmd"
+    [ -n "${REASON:-}" ] && printf '          %s\n' "$REASON"
+
+    if [ -n "$expect" ]; then
+        local up; up="$(printf '%s' "$expect" | tr '[:lower:]' '[:upper:]')"
+        if [ "$verdict" != "$up" ]; then
+            printf '          %sexpected %s%s\n' "$R" "$up" "$X"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# --- the acceptance set -------------------------------------------------------
+# These are the cases the ruleset exists for. The chained and wrapped forms are
+# the ones that matter: a bare `wipefs` is caught by anything, and
+# `cd /tmp && sudo wipefs …` is what walks past a naive prefix rule.
+#
+# Every DENY here is a command that would end the machine. Every ASK is
+# ordinary work that must NOT be blocked — a guard that denies these has
+# forbidden the project's whole purpose, which is the failure mode the five
+# surveyed guardrail repos all have.
+suite() {
+    local fails=0
+    printf '%sIrreversible — must DENY%s\n' "$B" "$X"
+    probe_one 'wipefs -a /dev/nvme0n1'                                  deny  || fails=$((fails+1))
+    probe_one 'cd /tmp && sudo wipefs -a /dev/nvme0n1'                  deny  || fails=$((fails+1))
+    probe_one 'timeout 30 sudo dd if=/dev/zero of=/dev/nvme0n1 bs=1M'   deny  || fails=$((fails+1))
+    probe_one 'sudo mkfs.ext4 /dev/nvme0n1p3'                           deny  || fails=$((fails+1))
+    probe_one 'echo x > /dev/nvme0n1'                                   deny  || fails=$((fails+1))
+    probe_one 'sudo cryptsetup luksErase /dev/nvme0n1p3'                deny  || fails=$((fails+1))
+    probe_one 'sudo sgdisk --zap-all /dev/nvme0n1'                      deny  || fails=$((fails+1))
+    probe_one 'sudo rm -rf /var/home'                                   deny  || fails=$((fails+1))
+    probe_one 'sudo rpm-ostree cleanup --rollback'                      deny  || fails=$((fails+1))
+    probe_one 'sudo ostree admin undeploy 1'                            deny  || fails=$((fails+1))
+    probe_one 'sed -i s/x/y/ .claude/hooks/bash-guard.py'               deny  || fails=$((fails+1))
+    probe_one 'claude --dangerously-skip-permissions'                   deny  || fails=$((fails+1))
+    probe_one 'git push --force origin main'                            deny  || fails=$((fails+1))
+
+    # Regressions. Each of these reached ASK on the first version of the
+    # ruleset — found by probing it, not by reading it. They stay here.
+    probe_one 'sudo rm -rf /*'                                          deny  || fails=$((fails+1))
+    probe_one 'sudo rm -rf "/var/home"'                                 deny  || fails=$((fails+1))
+    probe_one 'sudo tee /dev/nvme0n1 < /dev/zero'                       deny  || fails=$((fails+1))
+
+    # The /var/home layer defending itself. Same class as cleanup --rollback:
+    # harmless to the running system, fatal to its recoverability.
+    probe_one 'kopia snapshot delete k0123456789abcdef'                 deny  || fails=$((fails+1))
+    probe_one 'cd /tmp && kopia blob delete p01234567'                  deny  || fails=$((fails+1))
+    probe_one 'kopia snapshot expire --delete /var/home/jc'             deny  || fails=$((fails+1))
+
+    printf '\n%sThe job — must ASK, never DENY%s\n' "$B" "$X"
+    probe_one 'sudo rpm-ostree install fprintd fprintd-pam'             ask   || fails=$((fails+1))
+    probe_one 'rpm-ostree rebase fedora:fedora/41/x86_64/silverblue'    ask   || fails=$((fails+1))
+    probe_one 'sudo systemctl enable --now fprintd.service'             ask   || fails=$((fails+1))
+    probe_one 'sudo authselect enable-feature with-fingerprint'         ask   || fails=$((fails+1))
+    probe_one 'fprintd-enroll'                                          ask   || fails=$((fails+1))
+    probe_one 'flatpak install flathub com.bitwarden.desktop'           ask   || fails=$((fails+1))
+    probe_one 'sudo vi /etc/pam.d/gdm-fingerprint'                      ask   || fails=$((fails+1))
+    probe_one 'curl -fsSL https://claude.ai/install.sh | bash'          ask   || fails=$((fails+1))
+    probe_one 'kopia policy set --keep-daily 3 /var/home/jc'            ask   || fails=$((fails+1))
+    probe_one 'kopia restore k0123456789abcdef /var/home/jc/.ssh'       ask   || fails=$((fails+1))
+
+    printf '\n%sOrdinary reads — must ALLOW%s\n' "$B" "$X"
+    probe_one 'rpm-ostree status'                                       allow || fails=$((fails+1))
+    probe_one 'lsusb'                                                   allow || fails=$((fails+1))
+    probe_one 'journalctl -u fprintd -b'                                allow || fails=$((fails+1))
+    probe_one 'git log --oneline -20'                                   allow || fails=$((fails+1))
+    probe_one 'ls -la ~/Projects'                                       allow || fails=$((fails+1))
+    probe_one 'kopia snapshot list /var/home/jc'                        allow || fails=$((fails+1))
+    probe_one 'kopia repository status'                                 allow || fails=$((fails+1))
+
+    # The discriminating cases: recursive deletes that ARE backup-covered.
+    # If these ever read DENY the ruleset has drifted back to blocking by
+    # blast radius instead of by reversibility.
+    probe_one 'sudo rm -rf /home/jc/scratch'                            ask   || fails=$((fails+1))
+    probe_one 'rm -rf ./build'                                          ask   || fails=$((fails+1))
+
+    printf '\n'
+    if [ "$fails" -eq 0 ]; then
+        printf '%sacceptance: all cases match%s\n' "$G" "$X"
+        return 0
+    fi
+    printf '%sacceptance: %d case(s) did not match%s\n' "$R" "$fails" "$X"
+    return 1
+}
+
+# --- args ---------------------------------------------------------------------
+cmd=""; expect=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --command) cmd="${2:-}"; shift 2 ;;
+        --expect)  expect="${2:-}"; shift 2 ;;
+        --suite)   suite; exit $? ;;
+        -h|--help) sed -n '2,20p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *) echo "unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
+
+[ -n "$cmd" ] || { echo "probe: --command or --suite required" >&2; exit 2; }
+probe_one "$cmd" "$expect"

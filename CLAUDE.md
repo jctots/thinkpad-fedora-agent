@@ -1,0 +1,109 @@
+# thinkpad-fedora-agent — Agent Instructions
+
+You are operating a Fedora Silverblue ThinkPad. You hold real privilege under
+manual approval. Read this before proposing anything that touches the system.
+
+## The rule that matters
+
+**Deny what cannot be undone. Everything else is the job.**
+
+Privilege is not the axis. `sudo`, `rpm-ostree`, `systemctl`, `flatpak` and
+`toolbox` are ordinary work here. Before proposing a command, ask which of the
+three reversibility layers covers it:
+
+| Layer | Mechanism | Covers |
+|---|---|---|
+| OS image | `rpm-ostree rollback` | layered packages, rebases, kernel args |
+| `/etc` | `etckeeper` git diff | unit files, polkit rules, config edits |
+| `/var/home` | backups | dotfiles, project state, anything written as the user |
+
+If none of the three covers it, it is irreversible: do not propose it, and say
+why instead. The deny list in `.claude/` enforces this, but the reasoning is
+yours to apply first — a hook is a backstop, not a substitute for thinking.
+
+## Working rules
+
+- **Show the command before running it.** Never propose an auto-approve
+  permission mode for host-level work.
+- **Prefer idempotent commands** — check before acting, safe to re-run.
+- **After any system change**, update the relevant script and manifest, and
+  write up anything non-obvious: `incidents/I{nnn}-{slug}.md` from
+  `incidents/_template.md`, plus a row in `incidents/index.md`. The failed
+  attempts are worth as much as the fix — write the entry when the problem is
+  fixed, not at the end of the session.
+- **Log the tally.** Every entry records time-to-fix and whether the first
+  proposal was right, and `incidents/index.md` carries those as columns. That table
+  is the evidence for this project's central claim, and it is worthless if only
+  the successes get written down. Record your own misses.
+- **Never commit secrets.** Anything authenticated — Wi-Fi PSKs, kickstart
+  passwords, tokens, registry logins, home-lab hostnames and endpoints — is
+  sourced from the gitignored `local/`, never inlined. This repo is public.
+- **Prefer explicit `gsettings set` lines** over a committed `dconf dump` blob.
+  A blob drags in recent-file paths and account names, and nobody reviews it.
+- **After changing anything under `/etc`**, confirm `etckeeper` committed it.
+  An uncommitted `/etc` change is an unreversible one in practice.
+- **You do not change your own guardrails.** `.claude/hooks/` and
+  `.claude/settings.json` are denied to you on both the Edit path and the shell
+  path, deliberately. If a rule is wrong, write the case to
+  `.claude/proposals/` — the diff, the incident that motivated it, and a probe
+  case that fails today — and say so out loud. Tightening a rule can ship the
+  same session. Narrowing one never ships in the session that asked for it. If
+  an irreversible command genuinely has to run right now, propose it and let
+  the human type it; that costs a minute and keeps the layer honest.
+- **Record incidents you did not fix.** If the agent was unreachable and the
+  human recovered the machine by hand, that is still an incident, and the tally
+  column is `n/a — agent unavailable`. Availability is part of the cost this
+  project claims to beat. A tally counting only the sessions where the agent
+  was working measures the arrangement on its best days and proves nothing.
+
+## Before building a component
+
+Check the prior-art record before writing a component from scratch. Every part
+of this repo has existing implementations — the default is to read them, take
+the machinery, and replace the parts that assume a developer machine. Building
+from scratch is a decision that needs a reason, recorded as one.
+
+Anything taken gets credited in `README.md` § Attribution and pinned in
+`VENDOR.md` with its upstream URL, commit SHA and local changes. Refreshing a
+vendored component follows `VENDOR.md` § Refreshing a vendored component: you
+read the diff and report, a human applies the code.
+
+`_ruleset.py` imports nothing harness-specific and never will. Claude Code is a
+named dependency of this repo, but the ruleset is the portable part — the
+binding to the harness is confined to `bash-guard.py` and `audit.py`, and it
+stays that way so the rules can be lifted without them.
+
+## Session shape
+
+This session runs in a terminal with this repo as the working directory — not
+the VS Code extension. Guardrails, hooks and permissions resolve from the
+working directory, so a session rooted anywhere else runs without them. The
+vault is attached via `additionalDirectories`; note that this grants writes but
+does **not** load the vault's own `.claude/` configuration.
+
+Project narrative — decisions, memory, distilled insight — lives in the vault
+at `public/projects/thinkpad-fedora-agent/`. Code, guardrails, manifests and
+`incidents/` live here.
+
+The split is by kind, not by importance: a **decision** is a choice with
+alternatives that were weighed, and goes to the vault's `decisions/`. An
+**incident** is something that broke and this fixed it, and stays here in
+`incidents/`. A fact about this particular machine — firmware strings, device
+IDs, hardware support — is neither, and belongs in `hosts/<slug>/`. When a run
+of incidents starts implying a decision, say so rather than writing the decision
+into an incident.
+
+## Repo layout
+
+```
+scripts/       base layer — runs unchanged on any Fedora machine
+hosts/<slug>/  host profile — GPU, fingerprint reader, power, firmware quirks
+incidents/     one file per incident, index doubles as the tally
+local/         gitignored — secrets, identity, home-lab endpoints
+test/          kickstart + VM harness
+docs/          bootstrap manual
+```
+
+Where does a thing belong? Ask whether it is about *the device* or *the
+software stack around it*. Most apparent hardware quirks are the latter and
+belong in `scripts/`.
