@@ -4,11 +4,15 @@
 
 PYTHON ?= python3
 
-.PHONY: probe check hooks
+.PHONY: probe secrets-probe check hooks
 
 ## probe — run the acceptance set against the real guard
 probe:
 	@PYTHON=$(PYTHON) test/probe --suite
+
+## secrets-probe — feed the secret scanner known-bad input and check the verdict
+secrets-probe:
+	@PYTHON=$(PYTHON) test/secrets-probe
 
 ## check — probe one command:  make check CMD='wipefs -a /dev/nvme0n1'
 check:

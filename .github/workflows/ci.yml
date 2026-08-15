@@ -56,6 +56,15 @@ jobs:
           curl -fsSL "$url" | tar -xz -C /usr/local/bin gitleaks
           gitleaks version
 
+      # Before scanning the repo, check the rules can still catch anything.
+      # A config that compiles is not a config that works: one rule here once
+      # parsed cleanly and could never match. This runs first so a broken
+      # ruleset reports as a broken ruleset, not as a clean repo.
+      - name: rules behave as specified
+        run: make secrets-probe
+        env:
+          NO_COLOR: "1"
+
       - name: gitleaks detect
         run: gitleaks detect --config .gitleaks.toml --redact --verbose --no-banner
 
@@ -73,7 +82,7 @@ jobs:
         run: |
           set -uo pipefail
           fail=0
-          for f in test/probe install.sh scripts/install-hooks.sh .githooks/pre-commit; do
+          for f in test/probe test/secrets-probe install.sh scripts/install-hooks.sh .githooks/pre-commit; do
               mode="$(git ls-files -s -- "$f" | cut -d' ' -f1)"
               if [ -z "$mode" ]; then
                   echo "::error file=$f::not tracked"; fail=1
@@ -124,7 +133,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: shellcheck
-        run: shellcheck --severity=warning test/probe install.sh scripts/install-hooks.sh .githooks/pre-commit
+        run: shellcheck --severity=warning test/probe test/secrets-probe install.sh scripts/install-hooks.sh .githooks/pre-commit
 
       # Syntax errors and undefined names only. There is no lint config in
       # this repo and CI is not the place to introduce a style opinion.

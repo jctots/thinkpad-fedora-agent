@@ -35,12 +35,31 @@ fi
 
 printf 'pre-commit: scanning staged changes for secrets...\n'
 
-if ! gitleaks protect --staged --redact --config .gitleaks.toml --verbose; then
+# Exit 1 means findings. Anything above that means gitleaks itself failed --
+# a config that does not compile, an unreadable repo, a panic. Those are not
+# the same event and must not print the same message: a malformed regex once
+# shipped in this repo for two commits, and reporting that crash as "a secret
+# was found" would send you looking for a leak that does not exist.
+set +e
+gitleaks protect --staged --redact --config .gitleaks.toml --verbose
+rc=$?
+set -e
+
+if [ "$rc" -eq 1 ]; then
     fail "gitleaks found a secret in the staged changes. Nothing was committed.
 
 Do not fix this by editing the commit. Move the value into local/ and source
 it, then restage. If it is a false positive, add a narrow allowlist entry to
 .gitleaks.toml in the same commit, so the exception is reviewable."
+elif [ "$rc" -ne 0 ]; then
+    fail "gitleaks exited $rc -- it failed to run, and scanned nothing.
+
+This is a broken scanner, not a detected secret. Check .gitleaks.toml first;
+its regexes are RE2 (Go), which has no lookahead, lookbehind or
+backreferences. Run 'make secrets-probe' to exercise the rules directly.
+
+Nothing was committed. Do not work around this with SKIP_GITLEAKS=1 without
+reading the staged diff yourself."
 fi
 
 printf 'pre-commit: clean\n'
