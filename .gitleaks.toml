@@ -14,6 +14,14 @@ description = "Wi-Fi PSK passed to nmcli on the command line"
 regex = '''wifi-sec\.psk\s+["']?[^\s"']{8,}'''
 tags = ["wifi", "credential"]
 
+  # A value that is a shell variable expansion is the documented correct form,
+  # not a leak. Without this the rule flags every right-way example in the
+  # docs while missing the wrong-way one next to it, which is how a scanner
+  # trains people to ignore it.
+  [rules.allowlist]
+  regexTarget = "line"
+  regexes = ['''wifi-sec\.psk\s+["']?\$\{?[A-Za-z_]''']
+
 [[rules]]
 id = "kickstart-rootpw"
 description = "Kickstart rootpw or user password, plaintext or hashed"
@@ -50,7 +58,17 @@ paths = [
   '''\.gitleaks\.toml$''',
   '''^local/.*\.example$''',
   '''^VENDOR\.md$''',
+  # The probe's fixtures are generated into a temp directory at run time, but
+  # the heredocs that generate them are committed here, and they are supposed
+  # to look like credentials -- that is the whole point of the file.
+  '''^test/secrets-probe$''',
 ]
+# Match these against the whole line, not against the extracted secret. The
+# secret gitleaks pulls out of a rule with capture groups is not necessarily
+# the full match, so a PLACEHOLDER sitting in the value was not seen and the
+# committed kickstart example reported as a leak. test/secrets-probe caught
+# this; without regexTarget the placeholder fixtures fail.
+regexTarget = "line"
 regexes = [
   '''PLACEHOLDER''',
   # RFC5737 / RFC3927 documentation addresses, safe to use in examples
