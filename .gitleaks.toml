@@ -17,14 +17,19 @@ tags = ["wifi", "credential"]
 [[rules]]
 id = "kickstart-rootpw"
 description = "Kickstart rootpw or user password, plaintext or hashed"
-regex = '''(?i)^\s*(rootpw|user\s+.*--password)\s+(?!.*PLACEHOLDER)(--iscrypted\s+)?\S+'''
+# RE2 (Go) has no lookahead, so PLACEHOLDER is excluded by the [allowlist]
+# below rather than inline. (?m) is load-bearing: gitleaks scans a file as one
+# fragment, so without it `^` anchors to the start of the file and this rule
+# only fires on a kickstart whose first line is rootpw.
+regex = '''(?im)^\s*(rootpw|user\s+.*--password)\s+(--iscrypted\s+)?\S+'''
 path = '''\.ks$'''
 tags = ["kickstart", "credential"]
 
 [[rules]]
 id = "luks-passphrase"
 description = "LUKS passphrase inline in autopart or cryptsetup"
-regex = '''(?i)(--passphrase[= ]|luks[-_]?pass(word|phrase)[= ])(?!PLACEHOLDER)\S+'''
+# No lookahead in RE2 — PLACEHOLDER is excluded by the [allowlist] below.
+regex = '''(?i)(--passphrase[= ]|luks[-_]?pass(word|phrase)[= ])\S+'''
 tags = ["luks", "credential"]
 
 [[rules]]
