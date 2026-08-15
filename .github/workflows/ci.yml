@@ -1,0 +1,158 @@
+# CI for a repo whose only safety-critical component is a guardrail.
+#
+# The ordering below is deliberate. `probe` runs first and alone matters most:
+# rule changes arrive as human-applied proposals, and the failure mode is a
+# proposal that fixes one rule and quietly breaks four others. The rest check
+# properties that are cheap to assert and expensive to discover on the
+# machine — where the recovery path is a manual, not a rerun.
+#
+# The secret scan here is NOT a replacement for .githooks/pre-commit. The hook
+# stops a credential entering history; this only reports one that already did.
+# It exists because this repo is public and takes contributions: a PR arrives
+# from a clone with no hook installed, and CI is the only gate that sees it.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: guardrail acceptance suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Makefile shells out to test/probe, which needs the exec bit. If
+      # this fails with "permission denied", the index mode is wrong — see the
+      # hygiene job, which checks for exactly that.
+      - name: make probe
+        run: make probe
+        env:
+          NO_COLOR: "1"
+
+  secrets:
+    name: secret scan (full history)
+    runs-on: ubuntu-latest
+    env:
+      # Pinned rather than :latest — a scanner that silently changes its rules
+      # is worse than one that is a version behind. Bump deliberately.
+      GITLEAKS_VERSION: 8.21.2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # detect scans history; a shallow clone scans nothing
+
+      - name: install gitleaks
+        run: |
+          set -euo pipefail
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL "$url" | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: gitleaks detect
+        run: gitleaks detect --config .gitleaks.toml --redact --verbose --no-banner
+
+  hygiene:
+    name: file modes, line endings, settings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every one of these is executed directly by something: make, the
+      # bootstrap manual, or git itself. A missing exec bit does not error
+      # loudly — it turns .githooks/pre-commit into a secret scan that
+      # silently never runs, and `make probe` into permission denied.
+      - name: executable bits
+        run: |
+          set -uo pipefail
+          fail=0
+          for f in test/probe install.sh scripts/install-hooks.sh .githooks/pre-commit; do
+              mode="$(git ls-files -s -- "$f" | cut -d' ' -f1)"
+              if [ -z "$mode" ]; then
+                  echo "::error file=$f::not tracked"; fail=1
+              elif [ "$mode" != "100755" ]; then
+                  echo "::error file=$f::mode $mode, expected 100755 — fix with: git update-index --chmod=+x $f"
+                  fail=1
+              fi
+          done
+          exit $fail
+
+      # A CRLF shebang is `bad interpreter: /usr/bin/env bash^M`, and the
+      # scripts here run at points with no fallback. .gitattributes should
+      # make this unreachable; this is the check that it did.
+      - name: no CRLF in tracked text files
+        run: |
+          set -uo pipefail
+          if git grep -I -l $'\r' -- . > /tmp/crlf.txt 2>/dev/null && [ -s /tmp/crlf.txt ]; then
+              while read -r f; do echo "::error file=$f::contains CRLF"; done < /tmp/crlf.txt
+              exit 1
+          fi
+          echo "no CRLF found"
+
+      # A typo in a hook path does not error — it disables the guard, and
+      # nothing else in this repo would tell you.
+      - name: settings.json parses and its hook paths exist
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, re, sys
+
+          settings = json.loads(pathlib.Path(".claude/settings.json").read_text())
+          missing = []
+          for event, entries in settings.get("hooks", {}).items():
+              for entry in entries:
+                  for hook in entry.get("hooks", []):
+                      cmd = hook.get("command", "")
+                      for m in re.findall(r'\$CLAUDE_PROJECT_DIR/([^"\']+)', cmd):
+                          if not pathlib.Path(m).is_file():
+                              missing.append(f"{event}: {m}")
+          for m in missing:
+              print(f"::error file=.claude/settings.json::hook target does not exist: {m}")
+          sys.exit(1 if missing else 0)
+          PY
+
+  lint:
+    name: shell and python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: shellcheck --severity=warning test/probe install.sh scripts/install-hooks.sh .githooks/pre-commit
+
+      # Syntax errors and undefined names only. There is no lint config in
+      # this repo and CI is not the place to introduce a style opinion.
+      - name: ruff
+        run: |
+          pip install --quiet ruff
+          ruff check --select E9,F .claude/hooks/
+
+      # D21 scopes portability to _ruleset.py. This is that claim made
+      # mechanical instead of asserted: the ruleset must run on a bare
+      # interpreter, on a machine where nothing has been installed yet.
+      - name: _ruleset.py is stdlib-only
+        run: |
+          python3 - <<'PY'
+          import ast, pathlib, sys
+
+          src = pathlib.Path(".claude/hooks/_ruleset.py")
+          tree = ast.parse(src.read_text())
+          bad = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  names = [a.name.split(".")[0] for a in node.names]
+              elif isinstance(node, ast.ImportFrom):
+                  names = [(node.module or "").split(".")[0]] if node.level == 0 else []
+              else:
+                  continue
+              bad += [n for n in names if n and n not in sys.stdlib_module_names]
+          for n in bad:
+              print(f"::error file={src}::non-stdlib import: {n}")
+          sys.exit(1 if bad else 0)
+          PY

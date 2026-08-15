@@ -1,0 +1,13 @@
+# Everything tracked here is text, and several files are executed directly on
+# the machine. A CRLF shebang fails as `bad interpreter: /usr/bin/env bash^M`,
+# and the scripts here run at points with no fallback. This repo is public, so
+# LF is asserted rather than left to whatever a contributor's autocrlf says.
+
+* text=auto eol=lf
+
+# Belt and braces for the files that are run rather than read.
+*.sh    text eol=lf
+*.py    text eol=lf
+test/probe          text eol=lf
+.githooks/pre-commit text eol=lf
+Makefile            text eol=lf
