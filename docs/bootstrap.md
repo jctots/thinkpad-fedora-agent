@@ -36,7 +36,7 @@ The install has a bootstrap ordering problem: you need Wi-Fi to reach Bitwarden,
 An unpushed branch or a stash dies with the wipe. Sweep every repository on the machine, not the two you happen to be thinking about.
 
 ```powershell
-Get-ChildItem -Path C:\Users\jcdedios -Recurse -Depth 3 -Directory -Filter .git -Force |
+Get-ChildItem -Path C:\Users\jcdedios -Recurse -Depth 6 -Directory -Filter .git -Force -ErrorAction SilentlyContinue |
   ForEach-Object {
     $r = $_.Parent.FullName
     $dirty   = git -C $r status --porcelain
@@ -53,7 +53,9 @@ Get-ChildItem -Path C:\Users\jcdedios -Recurse -Depth 3 -Directory -Filter .git 
 
 - [ ] Run it. Resolve every repo it prints — commit and push, or consciously discard.
 - [ ] Re-run until it prints nothing.
-- [ ] Known at time of writing: this vault has uncommitted changes, and `signal-delta-hedge` has a session's work recorded as uncommitted pending review.
+- [ ] A submodule, a vendored upstream clone, or a repo under a sync folder sits deeper than the obvious two levels. The depth above is deliberately generous; do not lower it. It also matches `.git` directories left behind in caches and temp paths, which are noise — check the remote before treating one as real.
+- [ ] Repos under a cloud-sync folder are replicated off-machine already and are not wipe-fatal. Say so explicitly rather than leaving them in the output to be re-triaged on every re-run.
+- [ ] A project whose notes record uncommitted work may not have a clone on *this* machine at all. Confirm against the sweep output, not against the notes.
 
 ### 1.3b This repo, specifically
 
@@ -80,11 +82,18 @@ Ignore `node_modules`, `.venv`, build output. Look for small config-shaped files
 - [ ] `.mcp.json` (vault root, and any other repo using MCP servers)
 - [ ] `.rag-status`
 - [ ] Vikunja API token and any other service tokens
-- [ ] Claude Code user config — `~/.claude/settings.json` (the only authored file there) and `~/.claude.json` (MCP server entries **and tokens** — secure note, never a repo). Skip the runtime dirs: `projects/`, `sessions/`, `shell-snapshots/`, `file-history/`, `debug/`, `plans/`. `.credentials.json` is not carried — you re-auth on the new machine
+- [ ] Claude Code user config — `~/.claude/settings.json`, the only authored file there. Skip the runtime dirs: `projects/`, `sessions/`, `shell-snapshots/`, `file-history/`, `debug/`, `plans/`. `.credentials.json` is not carried — you re-auth on the new machine
+- [ ] `~/.claude.json` — **check before carrying it.** It can hold `mcpServers` entries with tokens, at top level or per project, but on a setup where every MCP server is declared in a project-scoped `.mcp.json` it holds only cache, telemetry and conversation history, and is worth nothing. Inspect the keys; carry it only if MCP entries are actually in there
 - [ ] Per-repo `.claude/settings.local.json` where it is gitignored. Note the vault tracks its own, so nothing to extract there
 - [ ] Anything in a `local/` or `secrets/` directory
 
-Copy these into Bitwarden as secure notes, or onto an encrypted USB stick. Not into a repo.
+Run the inverse check too. A private infrastructure repo may deliberately **track** its `.env` files, in which case they never appear in the `--ignored` output and there is nothing to extract — cloning restores them. Confirm with `git ls-files | grep '\.env$'` before assuming a missing `.env` means a lost credential, and before hand-copying one git already has.
+
+Copy what is left into Bitwarden as secure notes, or onto an encrypted USB stick. Not into a repo.
+
+Prefer **one** consolidated note over one note per file, if the total fits the note size limit. It is a single paste to make and a single thing to find later, and it can carry the restore path for each file alongside its contents. End it with an explicit last-line marker — `=== END OF BUNDLE (n/n) ===` — and confirm that marker is visible **on the phone**, not on this machine. A note truncated at paste time is indistinguishable from a good one until the day it is needed.
+
+Do not encrypt the bundle to a file unless you have already confirmed the tool that opens it will exist on the new machine before you need it. Ciphertext on a USB stick is not reachable from a phone, which is the property §1.7 requires.
 
 ### 1.5 SSH keys
 
@@ -110,7 +119,8 @@ If any service only accepts key auth and has no password path, that key must be 
 
 - [ ] Fedora Silverblue ISO written to a USB stick, and the checksum verified
 - [ ] The USB boots on this laptop — confirm before wiping, not after
-- [ ] Git sweep prints nothing
+- [ ] Git sweep prints nothing, or prints only repos consciously written off
+- [ ] **The 1.4 credential bundle is in Bitwarden and its end marker is visible from the phone**
 - [ ] **`thinkpad-fedora-agent` is pushed to GitHub and reachable from the phone** (1.3b)
 - [ ] **`make probe` passes** — the guardrails are real before the agent gets privilege, not after
 - [ ] **`docs/recovery.md` exported to the phone or printed**, alongside this manual. If the agent is unreachable when the machine breaks — no network, a usage limit, an outage — that card is the entire recovery path
