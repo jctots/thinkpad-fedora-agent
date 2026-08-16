@@ -1,11 +1,12 @@
-# Layered packages and Flatpaks
+# Layered packages, Flatpaks, and GNOME extensions
 
-The narrated companion to [`layer-packages.sh`](layer-packages.sh) and
-[`install-flatpaks.sh`](install-flatpaks.sh). Those two scripts are the source
-of truth — report-only, idempotent, safe to re-run to check this machine
-against the list. This file explains *why* each entry is there and when it
-was added; it does not enforce anything and can drift, so if the two ever
-disagree, trust the script and fix this file.
+The narrated companion to [`layer-packages.sh`](layer-packages.sh),
+[`install-flatpaks.sh`](install-flatpaks.sh), and
+[`install-gnome-extensions.sh`](install-gnome-extensions.sh). Those three
+scripts are the source of truth — report-only, idempotent, safe to re-run to
+check this machine against the list. This file explains *why* each entry is
+there and when it was added; it does not enforce anything and can drift, so if
+the two ever disagree, trust the script and fix this file.
 
 Update both in the same commit as the install that satisfies an entry.
 
@@ -25,6 +26,12 @@ Update both in the same commit as the install that satisfies an entry.
 |---|---|---|
 | `com.visualstudio.code` | 2026-08-16 (§3.6) | Editor. Chosen over the layered Microsoft RPM repo: no layering cost, no reboot, sandboxed. **Provisional** — the only trigger for revisiting is Flatpak sandbox friction with host terminals/`toolbox` becoming a real practical hassle, not a re-litigation on its own. Decision captured live to the vault's `_inbox/` on 2026-08-16 for filing as a proper decision doc |
 | `com.bitwarden.desktop` | 2026-08-16 (§3.1/§3.9) | Password manager desktop app. Bitwarden also publishes an official RPM, but via their own Cloudsmith-hosted repo — that means a third-party `.repo` file under `/etc/yum.repos.d/` plus a layered-package reboot. Flatpak is lower-friction and follows the same reasoning as the VS Code choice above |
+
+## GNOME Shell extensions
+
+| UUID | Added | Why |
+|---|---|---|
+| `tailscale-gnome-qs@tailscale-qs.github.io` | 2026-08-16 (post-§3.4b) | Quick Settings toggle for Tailscale connect/disconnect + exit-node selection — the Windows-tray-equivalent the user asked for. Chosen over the official `tailscale systray` (bundled in the `tailscale` package already, but needs the AppIndicator extension installed first since GNOME dropped the legacy tray) and over Trayscale (unofficial Flatpak GUI, same AppIndicator dependency, heavier). This is the only one of the three that doesn't need AppIndicator as a prerequisite. Third-party (not Tailscale Inc.), maintained fork of the abandoned `joaophi/tailscale-gnome-qs`; requires GNOME Shell 45+, this machine runs 50.4. No CLI installer is present on this machine (no `gnome-extensions-cli`/`gext`), so install is manual via the extensions.gnome.org browser toggle — `install-gnome-extensions.sh` only reports the gap |
 
 ## What this deliberately doesn't cover
 
