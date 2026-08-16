@@ -42,11 +42,14 @@ detect_host_profile() {
     vendor="$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || echo unknown)"
     product="$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo unknown)"
 
-    # TODO: pin these strings by reading them off the actual machine.
-    # Until then detection fails loudly rather than guessing wrong.
+    # Pinned 2026-08-16 from this machine: sys_vendor=LENOVO,
+    # product_name=21JKCTO1WW. "21JK" is the Lenovo MTM prefix for the
+    # E14 Gen 5 line; matched by prefix rather than the exact CTO suffix so
+    # other configs of the same model still resolve instead of falling
+    # through to "undetected".
     case "${vendor}|${product}" in
-        LENOVO*\|*E14*) echo "thinkpad-e14-gen5" ;;
-        *)              echo "" ;;
+        LENOVO\|21JK*) echo "thinkpad-e14-gen5" ;;
+        *)             echo "" ;;
     esac
 }
 
