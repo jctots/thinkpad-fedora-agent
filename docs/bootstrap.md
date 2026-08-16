@@ -234,6 +234,30 @@ Two paths on Silverblue, and they behave differently:
   This grants writes into `_inbox/` and nothing else, with no config discovery — `_inbox/` has no `.claude/` of its own anyway. Takes effect on the next session start; no restart of an already-running session needed to pick up a settings file change
 - [ ] **Verify the attach, not the vault's hooks.** Write a throwaway file into `_inbox/` from this session and confirm it appears on disk in the vault clone. That is the only capability this session needs from the vault
 - [ ] Read [`../.claude/proposals/README.md`](../.claude/proposals/README.md) once. It is where the agent puts rule changes it cannot make itself, and knowing it exists is what stops the first wrong rule turning into an argument mid-incident
+
+### 3.7b thinkpad-fedora-extras — if this machine has one
+
+Skip this on a fork that has no private extras layer. On this machine there is
+one, and without this step the rebuild silently stops short: `install.sh`
+treats a missing `EXTRAS_DIR` as a no-op by design (so forks without an
+extras repo aren't broken), which means a rebuild that skips this step
+finishes looking complete and simply never installs anything the extras
+layer covers — nothing fails loudly to say so. See [`extras.md`](extras.md)
+for the full mechanism; this is the restore path through it, not the
+from-scratch setup path.
+
+- [ ] Clone the extras repo (its remote — a private Gitea/GitHub/wherever you
+  pointed it, not referenced anywhere in this repo's history) to a sibling
+  directory of this one, e.g. `~/code/thinkpad-fedora-extras`
+- [ ] Copy `local/secrets.env.example` to `local/secrets.env` if §3.9 hasn't
+  already, and set `EXTRAS_DIR` to that clone's absolute path
+- [ ] If the agent should read/write there too — add its absolute path to
+  `additionalDirectories` in this repo's gitignored
+  `.claude/settings.local.json`, alongside the vault `_inbox/` entry from
+  §3.7. Takes effect on the next session start
+- [ ] Verify the wiring, not just the files: run `./install.sh` (or just the
+  extras repo's own report-only `*.sh` scripts directly) and confirm it
+  reports on the extras apps instead of silently skipping them
 - [ ] The manual ends here. Continue in that session.
 
 ### 3.8 The reversibility floor

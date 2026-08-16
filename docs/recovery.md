@@ -191,12 +191,14 @@ gone.
 2. Reinstall, following [`bootstrap.md`](bootstrap.md) Part 2.
 3. Clone this repo and run through Part 3. The manual is inside the repo and the
    repo is on GitHub — that ordering is deliberate, and §1.3b of the manual is
-   the reason.
+   the reason. If this machine has a private extras layer, §3.7b is in that
+   walk and is not optional here — skipping it leaves `install.sh` silently
+   not installing anything the extras repo covers.
 4. Restore `/var/home` from Card 3.
 
 What you lose is whatever was only in `/var/home` since the last backup, and
-whatever was never recorded in this repo. The second one is the drift risk that
-`incidents/` exists to bound.
+whatever was never recorded in this repo or its extras layer. The second one
+is the drift risk that `incidents/` exists to bound.
 
 ## Card 5 — Afterwards
 
