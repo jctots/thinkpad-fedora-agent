@@ -279,6 +279,14 @@ By design. The reproducibility bar is ~90–95% from scripts, with this covering
 - TPM2 auto-unlock enrolment for the root LUKS volume — `scripts/tpm2-luks-unlock.sh`
   reports readiness and prints the exact command, but enrolling requires typing
   the current LUKS passphrase interactively to authorize the new keyslot
+- Bitwarden desktop tray icon — after `appindicatorsupport@rgcjonas.gmail.com`
+  is installed (`scripts/install-gnome-extensions.sh`), enable the tray/minimize
+  option in Bitwarden's own Settings so its lock-state icon and Lock/Unlock
+  menu appear in the panel. No equivalent of `tailscale-gnome-qs` exists for
+  Bitwarden — it has no CLI/D-Bus surface a native Quick Settings extension
+  could poll or control, so its built-in tray icon (which needs the
+  AppIndicator bridge to render at all under GNOME Shell) is the only
+  lock-state indicator available
 - Anything requiring a browser login flow
 
 Keep this list in step with reality. When a script starts covering one of these, delete it from here.
