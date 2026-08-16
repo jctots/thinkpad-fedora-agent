@@ -14,9 +14,7 @@
   "permissions": {
     "deny": [
       "Edit(.claude/hooks/**)",
-      "Write(.claude/hooks/**)",
       "Edit(.claude/settings.json)",
-      "Write(.claude/settings.json)",
       "Edit(~/.claude/settings.json)",
       "Edit(~/.claude/settings.local.json)",
       "Read(./local/secrets.env)",
