@@ -267,6 +267,15 @@ By design. The reproducibility bar is ~90–95% from scripts, with this covering
 - Account logins — Bitwarden, Claude, GNOME online accounts
 - SSH key generation and registration
 - Fingerprint enrolment
+- GNOME Login keyring password blank-out, post-fingerprint-enrolment — `pam_fprintd`
+  has no login password to hand `pam_gnome_keyring`, so fingerprint login otherwise
+  still prompts for the keyring separately. Install `org.gnome.seahorse.Application`
+  (`scripts/install-flatpaks.sh`), then in Seahorse: right-click the **Login**
+  keyring → Change Password → enter the current password → leave the new one
+  blank → confirm through the warning dialog. Judged low-cost on this host since
+  TPM2 already auto-decrypts the whole disk at rest, so an unencrypted keyring on
+  an already-decrypted disk isn't a new exposure — re-weigh that trade-off on a
+  host without TPM2 auto-unlock
 - TPM2 auto-unlock enrolment for the root LUKS volume — `scripts/tpm2-luks-unlock.sh`
   reports readiness and prints the exact command, but enrolling requires typing
   the current LUKS passphrase interactively to authorize the new keyslot

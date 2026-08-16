@@ -29,6 +29,7 @@ times the agent could not help is measuring the arrangement on its best days.
 | # | Date | Area | Symptom | Time to fix | 1st proposal right? | Captured in |
 |---|---|---|---|---|---|---|
 | [I001](I001-libfprint-tod-override-hardlink-checkout.md) | 2026-08-16 | rpm-ostree | `override replace` hardlink-checkout failure replacing `libfprint` with the Goodix TOD build | ~25m | ✗ | `hosts/thinkpad-e14-gen5/quirks.sh` |
+| [I002](I002-bitwarden-flatpak-polkit-policy-readonly-usr.md) | 2026-08-16 | rpm-ostree | Bitwarden Flatpak biometric-unlock docs write to read-only `/usr` | ~30m | ✗ | `scripts/build-bitwarden-polkit-policy.sh` |
 
 ## Adding an entry
 

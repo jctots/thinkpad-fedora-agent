@@ -116,3 +116,21 @@ own.
   (`permissions.deny`) and in the ruleset's *guardrail layer defending itself*
   block, which also covers the shell-side forms (`sed -i`, `tee`, `mv`) that a
   tool-level deny does not see.
+
+---
+
+## bitwarden/clients — polkit action file
+
+- **Upstream:** https://github.com/bitwarden/clients
+- **Commit:** `92a620dd9c06c46127164d3c7a103aeafff92708`
+- **Retrieved:** 2026-08-16
+- **License:** GPL-3.0
+- **Vendored to:** `scripts/bitwarden-polkit-policy/com.bitwarden.Bitwarden.policy`
+- **Taken:** `apps/desktop/resources/com.bitwarden.desktop.policy`, verbatim,
+  no local changes. It has to match the action ID (`com.bitwarden.Bitwarden.unlock`)
+  the desktop app actually checks, so it is taken rather than hand-written.
+  Needed because the Bitwarden Flatpak's own biometrics setup writes this file
+  straight to `/usr/share/polkit-1/actions`, which fails on this machine's
+  read-only `/usr` — see `incidents/I002-bitwarden-flatpak-polkit-policy-readonly-usr.md`.
+  `scripts/build-bitwarden-polkit-policy.sh` packages it into a local RPM and
+  layers it via `rpm-ostree` instead.

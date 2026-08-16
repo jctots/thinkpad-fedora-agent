@@ -154,6 +154,7 @@ This repo vendors and borrows from other people's work.
 | [uaziz1/claude-code-guardrails](https://github.com/uaziz1/claude-code-guardrails) | MIT | The hook harness — pattern matching that survives chaining, wrappers and subshells, plus the non-blocking JSONL audit logger. The pattern set is replaced |
 | [swiencki/claude-code-guardrails](https://github.com/swiencki/claude-code-guardrails) | MIT | The probe method and its interface. No code — their probe reads exit status alone, which reports every ASK as ALLOW |
 | [dwarvesf/claude-guardrails](https://github.com/dwarvesf/claude-guardrails) | MIT | Two ideas: deny the agent editing its own settings, and block the permission-bypass flags |
+| [bitwarden/clients](https://github.com/bitwarden/clients) | GPL-3.0 | The polkit action file Bitwarden's desktop app needs for biometric unlock, taken verbatim since it has to match the app's own action ID |
 
 Also read and deliberately not used —
 [rulebricks](https://github.com/rulebricks/claude-code-guardrails) (fails open
@@ -173,9 +174,14 @@ local modifications and the refresh procedure** are in
 
 MIT — see [`LICENSE`](LICENSE).
 
-The vendored components are MIT, so this is the compatible answer and no
-attribution obligation is left dangling. Copyleft was the live alternative,
-since the differentiated part here is a safety mechanism. It was not chosen:
-the guardrail layer is only useful if it spreads, and the reversibility ruleset
-is meant to be lifted into other people's setups without them having to think
-about licensing at all.
+The guardrail components vendored here are MIT, so this is the compatible
+answer for the differentiated part of the repo, and no attribution obligation
+is left dangling there. Copyleft was the live alternative for the guardrail
+layer specifically; it was not chosen, since that layer is only useful if it
+spreads, and the reversibility ruleset is meant to be lifted into other
+people's setups without them having to think about licensing at all.
+
+One exception: `scripts/bitwarden-polkit-policy/com.bitwarden.Bitwarden.policy`
+is vendored verbatim from Bitwarden's GPL-3.0 `clients` repo — a data file, not
+code this repo builds on, kept under its own upstream license rather than
+relicensed.
