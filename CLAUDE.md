@@ -38,6 +38,15 @@ yours to apply first — a hook is a backstop, not a substitute for thinking.
 - **Never commit secrets.** Anything authenticated — Wi-Fi PSKs, kickstart
   passwords, tokens, registry logins, home-lab hostnames and endpoints — is
   sourced from the gitignored `local/`, never inlined. This repo is public.
+- **New app requests default to the private extras layer (`EXTRAS_DIR`), not
+  this repo.** This repo's scope is the harness/infrastructure (`scripts/`,
+  `hosts/`, `.claude/`) plus the small foundational app set already in
+  `scripts/install-flatpaks.sh` — an editor and a password manager, the ones
+  bootstrap/recovery themselves depend on or that near any fork of this
+  project would want. Everything else — a specific app, personal or
+  employer-specific software — goes to the private repo unless the user says
+  "public" explicitly. When it's a judgment call, ask rather than guess; see
+  `docs/extras.md`.
 - **Prefer explicit `gsettings set` lines** over a committed `dconf dump` blob.
   A blob drags in recent-file paths and account names, and nobody reviews it.
 - **After changing anything under `/etc`**, confirm `etckeeper` committed it.

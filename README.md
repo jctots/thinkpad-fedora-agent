@@ -58,6 +58,7 @@ hosts/<slug>/          host profile layer — one directory per machine
 local/                 gitignored — secrets, identity, home-lab endpoints
 .claude/               permission rules, guardrail hooks, audit log
 test/                  kickstart + VM harness
+docs/extras.md          optional private layer for fork-specific app installs
 ```
 
 ## 📊 Status
@@ -138,6 +139,17 @@ become DENY.
 Strictly more reproducible, and deferred to v2. Scripts crystallise out of real
 incidents here; there is not yet enough settled package set to declare. Building
 the image first would be capturing intent that has not been formed.
+
+**🔒 What if I want an app installed that doesn't belong in a public manifest?**
+`install.sh` supports an optional private layer — a private sibling repo of
+your own, connected only by `EXTRAS_DIR` in your gitignored
+`local/secrets.env`, running alongside the base and host-profile layers under
+the same guardrails. No submodule, no private URL in this repo's history, and
+every fork is unaffected until it opts in. This repo's own scope is narrow —
+infrastructure/harness plus a small foundational app set (editor, password
+manager) — so **a new app defaults to the private repo**, not this one, unless
+it's something near any fork would also need. Full walkthrough for setting one
+up, and the default-placement rule, in [`docs/extras.md`](docs/extras.md).
 
 **🗄️ Where is the rest of the reasoning?**
 The full decision log — alternatives weighed, options rejected — is kept in a

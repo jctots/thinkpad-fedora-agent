@@ -15,7 +15,6 @@ set -euo pipefail
 flatpaks=(
   "com.visualstudio.code|editor — bootstrap.md §3.6. Flatpak chosen over the layered Microsoft RPM repo: no layering cost, no reboot, sandboxed. Provisional — the only trigger for revisiting is sandbox friction with host terminals/toolbox becoming a real hassle in practice, not a re-litigation on its own"
   "com.bitwarden.desktop|password manager desktop app — bootstrap.md §3.1/§3.9. Official upstream also ships an RPM via their own Cloudsmith repo, but that means adding a third-party .repo file plus a layered-package reboot; flatpak is lower-friction and matches the same reasoning as the VS Code choice above"
-  "eu.betterbird.Betterbird|email client, user request 2026-08-16. Betterbird has no RPM or COPR — upstream only publishes a Linux tarball and this Flathub build; flatpak is the only packaged option here, not a friction trade-off against a layered alternative like the two entries above"
   "org.gnome.seahorse.Application|GUI to blank the GNOME Login keyring password so fingerprint login can unlock it — pam_fprintd has no password to hand pam_gnome_keyring, see docs/bootstrap.md Part 4. Flatpak over a layered RPM: same reasoning as VS Code/Bitwarden above, and this is a one-time manual task, not a daily-use app"
 )
 
