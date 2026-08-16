@@ -89,6 +89,7 @@ of waiting to be asked.
 | 🩺 `/host-check` | Runs every report-only script (`scripts/*.sh`, `hosts/<slug>/*.sh`) and summarizes ok/missing | 🤖 Agent, freely — read-only execution of scripts already guaranteed idempotent |
 | 🗄️ `/etc-drift` | Checks `etckeeper` actually committed the last `/etc` change | 🤖 Agent for the check; 🧑 human approves the shown `etckeeper commit` if one's needed |
 | 🧳 `/handover` | Snapshots session state to `.claude/handover.md` before a reboot-triggering action, and reads it back in on the next session | 🤖 Agent, proactively — already standing practice, this just formalizes it |
+| ⬆️ `/update-check` | Reports OS image staleness (`rpm-ostree upgrade --check`) and drift across both flatpak manifests (public + private extras) — current/outdated/missing, never runs the upgrade itself | 🤖 Agent for the check; 🧑 human approves the shown `rpm-ostree upgrade` or `flatpak update` if one's needed |
 
 The dividing line isn't privilege, same as the guardrails themselves: it's
 whether a step is read-only/reversible-by-git (agent runs it unasked) or a
