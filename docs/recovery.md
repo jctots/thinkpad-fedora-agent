@@ -14,10 +14,10 @@ GNOME, a dead NIC or a firmware problem is a plausible reason you *cannot* open
 a session — which is exactly when you need to roll back.
 
 > **Verification status.** The commands below are written from the documented
-> behaviour of `rpm-ostree`, `ostree` and `etckeeper`. They have **not** been
-> run on this machine — it still runs Windows 11. `bootstrap.md` §3.8 requires
-> walking this card once on a working system before the agent is given work.
-> Correct anything here that turns out to be wrong, at that point.
+> behaviour of `rpm-ostree`, `ostree` and `etckeeper`. `bootstrap.md` §3.8
+> requires walking this card once on a working system before the agent is
+> given work. Correct anything here that turns out to be wrong, at that
+> point, and record the walk-through in `incidents/` once it happens.
 
 ---
 
@@ -208,10 +208,10 @@ and a row in the index, with `n/a — agent unavailable` in the first-proposal
 column.
 
 Those rows are not noise. This project's claim is that a privileged agent plus
-reversibility makes a Linux desktop cheaper to live with than Windows.
-Availability is part of that cost. A tally that counts only the sessions where
-the agent was working measures the arrangement on its best days and proves
-nothing.
+reversibility makes a Linux desktop cheaper to live with than maintaining it
+by hand. Availability is part of that cost. A tally that counts only the
+sessions where the agent was working measures the arrangement on its best
+days and proves nothing.
 
 Record, at minimum: what broke, which card you used, how long it took, and why
 the agent was not available.

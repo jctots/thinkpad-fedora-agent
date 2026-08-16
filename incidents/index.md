@@ -15,17 +15,16 @@ becomes once the same problem has come up enough times to be worth automating.
 
 The columns below are the evidence for this project's central claim: that a
 privileged agent plus reversibility makes a Linux desktop cheaper to live with
-than Windows. The claim is only falsifiable if the misses are recorded as
-faithfully as the hits. **An index with no `✗` in the last column is evidence
-of nothing except selective writing.**
+than maintaining it by hand. The claim is only falsifiable if the misses are
+recorded as faithfully as the hits. **An index with no `✗` in the last column
+is evidence of nothing except selective writing.**
 
 An incident fixed by hand because the agent was unreachable — no network, a
 usage limit, a broken session, an outage — still gets a row, with
 `n/a — agent unavailable` in the first-proposal column. Those rows are not
-noise. Availability is part of the cost being compared against Windows, and a
-tally that silently drops the times the agent could not help is measuring the
-arrangement on its best days. `docs/recovery.md` is the path those entries come
-from.
+noise. Availability is part of that cost, and a tally that silently drops the
+times the agent could not help is measuring the arrangement on its best days.
+`docs/recovery.md` is the path those entries come from.
 
 | # | Date | Area | Symptom | Time to fix | 1st proposal right? | Captured in |
 |---|---|---|---|---|---|---|

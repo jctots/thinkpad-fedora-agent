@@ -8,9 +8,10 @@ the system cannot undo. Because every change it makes is recorded as it happens,
 the machine can also be rebuilt from this repo — that is a consequence of
 keeping the record, not the goal.
 
-**The bet:** a Linux desktop costs more time than Windows. A privileged agent
-plus reversibility closes that gap, and past a point reverses it — not by
-hiding the system, but by making it answerable. This project is the test.
+**The bet:** maintaining a Linux desktop by hand costs more time than it
+should. A privileged agent plus reversibility closes that gap, and past a
+point reverses it — not by hiding the system, but by making it answerable.
+This project is the test.
 
 **What makes it safe enough to try:**
 
@@ -61,10 +62,13 @@ test/                  kickstart + VM harness
 
 ## Status
 
-Early. The machine this describes is still running Windows 11; the repo is
-being scaffolded ahead of the install. Scripts crystallise out of real use
-rather than being written up front, so expect
-[`incidents/`](incidents/index.md) to lead and `scripts/` to follow.
+Bootstrapped and active. The machine runs Fedora Silverblue, the agent has
+real privilege under the guardrail layer, and the fingerprint reader, TPM2
+disk auto-unlock, and package/extension manifests reflect real work rather
+than a plan. Scripts crystallise out of real use rather than being written up
+front, so expect [`incidents/`](incidents/index.md) to lead and `scripts/` to
+follow. A reinstall now starts from `docs/bootstrap.md` on an existing Fedora
+install, not from a different OS.
 
 The incident index is also the project's own scoreboard: every entry records
 time-to-fix and whether the agent's first proposal was right. The claim above

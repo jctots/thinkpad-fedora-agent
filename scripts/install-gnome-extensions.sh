@@ -15,7 +15,7 @@ set -euo pipefail
 
 # uuid|extensions.gnome.org URL|reason
 extensions=(
-  "tailscale-gnome-qs@tailscale-qs.github.io|https://extensions.gnome.org/extension/9193/tailscale-qs/|Quick Settings toggle for Tailscale connect/disconnect + exit-node selection — Windows-tray-equivalent, chosen over the official \`tailscale systray\` (needs AppIndicator support first) and over Trayscale (unofficial flatpak, same AppIndicator dependency). Maintained fork of the abandoned joaophi/tailscale-gnome-qs; GNOME Shell 45+ required, this machine runs 50.4"
+  "tailscale-gnome-qs@tailscale-qs.github.io|https://extensions.gnome.org/extension/9193/tailscale-qs/|Quick Settings toggle for Tailscale connect/disconnect + exit-node selection — persistent-tray-icon equivalent, chosen over the official \`tailscale systray\` (needs AppIndicator support first) and over Trayscale (unofficial flatpak, same AppIndicator dependency). Maintained fork of the abandoned joaophi/tailscale-gnome-qs; GNOME Shell 45+ required, this machine runs 50.4"
 )
 
 missing=()

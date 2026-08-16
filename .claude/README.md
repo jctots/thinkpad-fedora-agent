@@ -1,10 +1,11 @@
 # .claude/ — the guardrail layer
 
-**Active.** The harness is vendored, the reversibility ruleset is written, and
-`make probe` passes its acceptance set. It has **not** been exercised on the
-target machine — the ThinkPad still runs Windows 11. Re-run `make probe` on
-Silverblue before giving the agent any work; a rule that passes here can still
-be wrong about a path that only exists there.
+**Active.** The harness is vendored, the reversibility ruleset is written,
+`make probe` passes its acceptance set, and the guardrails have been
+exercised on the target machine under real `rpm-ostree`/`etckeeper` work (see
+`incidents/`). Re-run `make probe` after any change here or to the harness
+itself — a rule that passes in isolation can still be wrong about a path that
+only exists on this machine.
 
 ```
 settings.json     permission rules + hook wiring

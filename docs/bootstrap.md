@@ -1,6 +1,6 @@
 # thinkpad-fedora-agent — Bootstrap Manual
 
-Manual procedure for taking the ThinkPad E14 Gen 5 from Windows 11 to the point where `thinkpad-fedora-agent` can take over. Everything here is done by hand — this is the part that cannot be scripted, because the machine that would run the script does not exist yet.
+Manual procedure for taking the ThinkPad E14 Gen 5 from bare metal to the point where `thinkpad-fedora-agent` can take over. A reinstall now starts from a running Fedora Silverblue install, not from a different OS. Everything here is done by hand — this is the part that cannot be scripted, because the machine that would run the script does not exist yet.
 
 > **Export this before you start.** Print it, or save it as a PDF on your phone. During the reformat there is no vault, no repo and no laptop — this document and the Bitwarden app on your phone are the two things that cannot be recovered from anything else. Everything else can.
 
@@ -8,7 +8,7 @@ Manual procedure for taking the ThinkPad E14 Gen 5 from Windows 11 to the point 
 
 ---
 
-## Part 1 — Pre-flight (on Windows, before wiping)
+## Part 1 — Pre-flight (on the running Fedora install, before wiping)
 
 ### 1.1 Two-device check
 
@@ -35,20 +35,19 @@ The install has a bootstrap ordering problem: you need Wi-Fi to reach Bitwarden,
 
 An unpushed branch or a stash dies with the wipe. Sweep every repository on the machine, not the two you happen to be thinking about.
 
-```powershell
-Get-ChildItem -Path C:\Users\jcdedios -Recurse -Depth 6 -Directory -Filter .git -Force -ErrorAction SilentlyContinue |
-  ForEach-Object {
-    $r = $_.Parent.FullName
-    $dirty   = git -C $r status --porcelain
-    $unpushed = git -C $r log --branches --not --remotes --oneline
-    $stashes = git -C $r stash list
-    if ($dirty -or $unpushed -or $stashes) {
-      Write-Output "=== $r"
-      if ($dirty)    { Write-Output "  uncommitted:"; $dirty }
-      if ($unpushed) { Write-Output "  unpushed:";    $unpushed }
-      if ($stashes)  { Write-Output "  stashes:";     $stashes }
-    }
-  }
+```bash
+find "$HOME" -maxdepth 7 -type d -name .git 2>/dev/null | while read -r gitdir; do
+  r="$(dirname "$gitdir")"
+  dirty=$(git -C "$r" status --porcelain)
+  unpushed=$(git -C "$r" log --branches --not --remotes --oneline)
+  stashes=$(git -C "$r" stash list)
+  if [ -n "$dirty$unpushed$stashes" ]; then
+    echo "=== $r"
+    [ -n "$dirty" ]    && { echo "  uncommitted:"; echo "$dirty"; }
+    [ -n "$unpushed" ] && { echo "  unpushed:";    echo "$unpushed"; }
+    [ -n "$stashes" ]  && { echo "  stashes:";     echo "$stashes"; }
+  fi
+done
 ```
 
 - [ ] Run it. Resolve every repo it prints — commit and push, or consciously discard.
@@ -71,9 +70,9 @@ The sweep above covers it, but it is called out because it is the one repository
 
 Cloning a repo gives you a tree that looks complete and silently is not. Everything deliberately kept out of git is missing — and those are the files holding credentials and machine-local configuration.
 
-```powershell
+```bash
 # per repo — lists ignored files; expect noise from build dirs
-git -C <repo> status --ignored --porcelain | Select-String '^!!'
+git -C <repo> status --ignored --porcelain | grep '^!!'
 ```
 
 Ignore `node_modules`, `.venv`, build output. Look for small config-shaped files:
@@ -112,8 +111,7 @@ If any service only accepts key auth and has no password path, that key must be 
 - [ ] Documents, photos, downloads — anything under the user profile not in a repo
 - [ ] Browser bookmarks and profile data worth keeping
 - [ ] Software licences and product keys tied to this machine
-- [ ] Anything under `C:\` outside the user profile you put there deliberately
-- [ ] Windows recovery media, if you want the option of going back
+- [ ] Anything outside the user profile you put there deliberately
 
 ### 1.7 Final gate
 
@@ -134,7 +132,7 @@ Nothing here is unusual; it is listed so the manual is complete.
 
 - [ ] Boot the USB. On the ThinkPad this is `F12` for the boot menu, `F1` for BIOS.
 - [ ] Secure Boot can stay enabled — Fedora is signed. Leave it on unless something later requires otherwise.
-- [ ] Wipe the disk. This destroys Windows.
+- [ ] Wipe the disk.
 - [ ] Enable **full disk encryption** and use the passphrase from Bitwarden (1.2).
 - [ ] Create the user account.
 - [ ] Reboot, complete the GNOME first-boot wizard. Skip online accounts for now.
