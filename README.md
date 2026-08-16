@@ -74,6 +74,26 @@ The incident index is also the project's own scoreboard: every entry records
 time-to-fix and whether the agent's first proposal was right. The claim above
 is meant to be checkable against it.
 
+## 🧩 Skills
+
+Reusable routines for recurring project chores, on top of the base
+guardrails. Not all of these hit the system — most are read/report/propose
+only, which is why several are safe for the agent to run on its own instead
+of waiting to be asked.
+
+| Skill | Does | Who invokes it |
+|---|---|---|
+| 🔄 `/vendor-update` | Diffs each pinned commit in `VENDOR.md` against upstream, walks the Local Changes table, writes findings to `.claude/proposals/` | 🧑 Human — no natural trigger event, occasional cadence |
+| 📝 `/incident` | Scaffolds `incidents/I{nnn}-{slug}.md` from the template and inserts the index row | 🤖 Agent, proactively, right after a fix lands — except the ✓/✗ first-proposal tally, always asked, never guessed |
+| 🩺 `/host-check` | Runs every report-only script (`scripts/*.sh`, `hosts/<slug>/*.sh`) and summarizes ok/missing | 🤖 Agent, freely — read-only execution of scripts already guaranteed idempotent |
+| 🗄️ `/etc-drift` | Checks `etckeeper` actually committed the last `/etc` change | 🤖 Agent for the check; 🧑 human approves the shown `etckeeper commit` if one's needed |
+| 🧳 `/handover` | Snapshots session state to `.claude/handover.md` before a reboot-triggering action, and reads it back in on the next session | 🤖 Agent, proactively — already standing practice, this just formalizes it |
+
+The dividing line isn't privilege, same as the guardrails themselves: it's
+whether a step is read-only/reversible-by-git (agent runs it unasked) or a
+real system mutation (shown as a command, human approves), per CLAUDE.md's
+working rules.
+
 ## FAQ
 
 The reasoning behind the non-obvious choices. Each answer is the conclusion and
