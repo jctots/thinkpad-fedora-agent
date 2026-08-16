@@ -3,6 +3,12 @@ name: handover
 description: Write or read .claude/handover.md, a session-continuity snapshot used instead of `claude -c` around a reboot-triggering action. Use in write mode proactively before anything likely to end the session (systemctl reboot, rpm-ostree rebase, anything requiring a restart); use in read mode when the user says they're back after a reboot.
 ---
 
+Normally reached via `/end-session`, which checks whether a reboot is
+actually pending and invokes this skill's write mode only if so — don't
+make the user track which mechanism applies. Invoke this skill directly
+when you already know a reboot is imminent and want the snapshot written
+without going through that check.
+
 Formalizes the standing practice already recorded in this project's memory
 (`feedback-handover-over-dash-c`): `claude -c` replays the entire prior
 transcript as input tokens on every subsequent turn, including large
