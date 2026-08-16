@@ -220,8 +220,21 @@ Two paths on Silverblue, and they behave differently:
 
 - [ ] `scripts/install-hooks.sh` — git does not clone hooks, so the gitleaks pre-commit scan is off on a fresh clone until this runs
 - [ ] Start a Claude Code session in a **terminal**, with that repo as the working directory — not the VS Code extension. Its `.claude/settings.json` carries the permission rules and wires the `PreToolUse` guard and the audit hook; all of it resolves from the session's working directory, so a session started anywhere else runs unguarded
-- [ ] Attach the vault to that session via `additionalDirectories` rather than opening a second session. Note this grants writes but does **not** load the vault's own `.claude/` configuration — the vault's hooks use relative paths and will not fire from here. Move anything you depend on to user scope with absolute paths
-- [ ] **Verify the vault from *this* session, not from a vault session.** Ask for something that needs RAG retrieval and something that needs context injection. If either is silent, the vault's hooks are still project-scoped and did not fire — move them to user scope with absolute paths before continuing. §3.5 passing does not carry over
+- [ ] Attach only the vault's `_inbox/` — not the vault root — as a permanent, gitignored local setting rather than a per-session flag:
+
+  ```json
+  // .claude/settings.local.json (create if missing — already gitignored)
+  {
+    "permissions": {
+      "additionalDirectories": [
+        "/absolute/path/to/second-brain/_inbox"
+      ]
+    }
+  }
+  ```
+
+  This grants writes into `_inbox/` and nothing else, with no config discovery — `_inbox/` has no `.claude/` of its own anyway. Takes effect on the next session start; no restart of an already-running session needed to pick up a settings file change
+- [ ] **Verify the attach, not the vault's hooks.** Write a throwaway file into `_inbox/` from this session and confirm it appears on disk in the vault clone. That is the only capability this session needs from the vault
 - [ ] Read [`../.claude/proposals/README.md`](../.claude/proposals/README.md) once. It is where the agent puts rule changes it cannot make itself, and knowing it exists is what stops the first wrong rule turning into an argument mid-incident
 - [ ] The manual ends here. Continue in that session.
 
@@ -256,6 +269,9 @@ By design. The reproducibility bar is ~90–95% from scripts, with this covering
 - Account logins — Bitwarden, Claude, GNOME online accounts
 - SSH key generation and registration
 - Fingerprint enrolment
+- TPM2 auto-unlock enrolment for the root LUKS volume — `scripts/tpm2-luks-unlock.sh`
+  reports readiness and prints the exact command, but enrolling requires typing
+  the current LUKS passphrase interactively to authorize the new keyslot
 - Anything requiring a browser login flow
 
 Keep this list in step with reality. When a script starts covering one of these, delete it from here.

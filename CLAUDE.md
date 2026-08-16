@@ -77,13 +77,42 @@ stays that way so the rules can be lifted without them.
 
 This session runs in a terminal with this repo as the working directory — not
 the VS Code extension. Guardrails, hooks and permissions resolve from the
-working directory, so a session rooted anywhere else runs without them. The
-vault is attached via `additionalDirectories`; note that this grants writes but
-does **not** load the vault's own `.claude/` configuration.
+working directory, so a session rooted anywhere else runs without them. Only the vault's `_inbox/` is attached, via `permissions.additionalDirectories`
+in `.claude/settings.local.json` (gitignored — the absolute path is
+host-specific, and this repo is public) — not the vault root, and not
+`--add-dir`. The settings-key form grants file access only, with no config
+discovery at all, which is what this session actually needs: `_inbox/` has no
+`.claude/` of its own to load, and nothing here depends on the vault's
+context-injection or RAG hooks firing.
 
 Project narrative — decisions, memory, distilled insight — lives in the vault
 at `public/projects/thinkpad-fedora-agent/`. Code, guardrails, manifests and
 `incidents/` live here.
+
+**Capturing something into the vault from this session.** Do not wait until
+the session ends — a reboot, hang, or crash mid-`rpm-ostree` loses anything not
+already written. The moment something is decision- or insight-worthy (not a
+routine incident — those stay in `incidents/`), write one file directly into
+the vault's `_inbox/`, named
+`_inbox/{YYYY-MM-DD}-thinkpad-fedora-agent-{slug}.md`. One file per event,
+never appended — never write to a file this session created earlier in the
+same run. Contents: a one-line pointer (likely target project; a reference
+into this repo's `incidents/` if the fuller narrative lives there), then a
+marker line using the vault's existing vocabulary:
+
+```
+> Captured live by thinkpad-fedora-agent. Likely target: public/projects/thinkpad-fedora-agent.
+> Detail: thinkpad-fedora-agent repo, incidents/007.md
+
+🧠 [memory event]: one-line description
+```
+
+`🧠` memory / `🗂️` distill-worthy cross-project insight / `✅` next action /
+`👤` observation about the human — same taxonomy the vault uses everywhere
+else. A vault-side session processes these later; this session's job is only
+to capture, not to file it correctly. See
+`public/projects/thinkpad-fedora-agent/decisions/D26-vault-attach-scoped-to-inbox-live-capture-not-full-vault-hooks.md`
+in the vault for the full reasoning.
 
 The split is by kind, not by importance: a **decision** is a choice with
 alternatives that were weighed, and goes to the vault's `decisions/`. An

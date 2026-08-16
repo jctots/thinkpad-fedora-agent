@@ -15,6 +15,17 @@ test/*.generated.ks
 .claude/audit/
 *.jsonl
 
+# Local permission overrides — additionalDirectories points at an absolute,
+# host-specific path to the vault clone. Same reasoning as local/: never inline
+# a host-specific value into a committed file.
+.claude/settings.local.json
+
+# Session handover state — written before a reboot the agent knows will kill
+# the session, read back in on the next session instead of replaying the old
+# transcript with `-c`. Ephemeral working state, not project narrative: the
+# vault's _inbox/ and incidents/ are where anything durable actually belongs.
+.claude/handover.md
+
 # Python bytecode. The hooks run as scripts, never as an imported package,
 # so nothing here is worth tracking.
 __pycache__/
