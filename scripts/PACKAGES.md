@@ -26,6 +26,7 @@ Update both in the same commit as the install that satisfies an entry.
 |---|---|---|
 | `com.visualstudio.code` | 2026-08-16 (§3.6) | Editor. Chosen over the layered Microsoft RPM repo: no layering cost, no reboot, sandboxed. **Provisional** — the only trigger for revisiting is Flatpak sandbox friction with host terminals/`toolbox` becoming a real practical hassle, not a re-litigation on its own. Decision captured live to the vault's `_inbox/` on 2026-08-16 for filing as a proper decision doc |
 | `com.bitwarden.desktop` | 2026-08-16 (§3.1/§3.9) | Password manager desktop app. Bitwarden also publishes an official RPM, but via their own Cloudsmith-hosted repo — that means a third-party `.repo` file under `/etc/yum.repos.d/` plus a layered-package reboot. Flatpak is lower-friction and follows the same reasoning as the VS Code choice above |
+| `eu.betterbird.Betterbird` | 2026-08-16 (user request) | Email client (Thunderbird fork). Unlike VS Code/Bitwarden above, this isn't a friction trade-off against a layered alternative — Betterbird has no RPM or COPR, upstream ships only a Linux tarball and this official Flathub build, so Flatpak is the only packaged install path |
 
 ## GNOME Shell extensions
 
