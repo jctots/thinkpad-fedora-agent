@@ -113,4 +113,42 @@ covered by the deny list. Worst case if the field-name assumption above is
 wrong: the hook silently no-ops every turn (empty `transcript_path` → exit 0
 immediately), not a false positive or a blocking failure.
 
-**Outcome:** open
+**Outcome:** applied 2026-08-16, from the second-brain vault session (this
+proposal is exactly the case it describes — the agent operating inside this
+repo is blocked from editing `.claude/settings.json`, so a session rooted
+elsewhere made the edit).
+
+`.claude/settings.json` now has a `UserPromptSubmit` hook entry alongside the
+existing `PreToolUse`/`PostToolUse` ones, calling
+`"$CLAUDE_PROJECT_DIR/scripts/session-token-check.sh"` (absolute via
+`$CLAUDE_PROJECT_DIR`, not the relative path in the original diff above — matches
+the style of the other two hooks and doesn't depend on cwd).
+
+Threshold changed from the proposal's single 150000 default to a **two-tier**
+scheme, superseding the single-threshold design above: `SESSION_TOKEN_WARN_THRESHOLD`
+(soft, default 100000, 50% of the 200k window) and
+`SESSION_TOKEN_CRITICAL_THRESHOLD` (critical, default 150000, 75%). Only the
+higher tier's message prints once both are crossed. jc chose this after
+weighing 100000-only (more headroom, more false positives on ordinary
+tool-output-heavy sessions) against 150000-only (fewer false positives, less
+headroom) — the two-tier design gets both: an early nudge plus a harder stop
+close to the cliff. `scripts/session-token-check.sh` was rewritten
+accordingly.
+
+The same two-tier warning was also ported to the second-brain vault repo as
+`_scripts/check-session-tokens.py` (Python, matching that repo's hook
+conventions rather than bash) — same thresholds and env var names, wired
+into that repo's own `UserPromptSubmit` chain. Not part of this proposal's
+original scope (thinkpad-fedora-agent only) but the same gap, so recorded
+here for the paper trail; the vault repo has no self-edit guardrail so no
+outside-session workaround was needed there.
+
+Re-verified after all edits: both `settings.json` files parse as valid JSON;
+both scripts' soft/critical/silent/missing-field/nonexistent-file pipe tests
+all pass against the live wiring.
+
+**Still open, per the proposal's own caveat:** whether Claude Code's real
+`UserPromptSubmit` stdin payload actually has a `.transcript_path` field
+with this exact name. That needs a live-fire check from inside a real
+`thinkpad-fedora-agent` session — tee the payload to a file, send a real
+prompt, inspect it — which a vault-session edit can't do.

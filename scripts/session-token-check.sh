@@ -15,16 +15,18 @@
 # ~12.4M was repeated cache_read noise, while the last turn's actual context
 # size was ~203k).
 #
-# Threshold default (150000) sits under the standard 200k context window,
-# so the warning lands before the window is nearly full, not at the edge.
-# Override with SESSION_TOKEN_WARN_THRESHOLD.
+# Two-tier: a soft warning at SESSION_TOKEN_WARN_THRESHOLD (default 100000,
+# 50% of the 200k window) and a critical one at
+# SESSION_TOKEN_CRITICAL_THRESHOLD (default 150000, 75%). Only the
+# higher-tier message prints once both are crossed.
 #
 # Usage: piped stdin JSON from the UserPromptSubmit hook, e.g.
 #   echo '{"transcript_path":"/path/to/session.jsonl"}' | scripts/session-token-check.sh
 
 set -euo pipefail
 
-threshold="${SESSION_TOKEN_WARN_THRESHOLD:-150000}"
+warn_threshold="${SESSION_TOKEN_WARN_THRESHOLD:-100000}"
+critical_threshold="${SESSION_TOKEN_CRITICAL_THRESHOLD:-150000}"
 
 transcript_path="$(jq -r '.transcript_path // empty')"
 
@@ -58,9 +60,12 @@ else:
     )
 " "$transcript_path")"
 
-if [ "$context_size" -ge "$threshold" ]; then
+if [ "$context_size" -ge "$critical_threshold" ]; then
+    printf '{"systemMessage": "Session context is at ~%s tokens (critical threshold %s) — wrap up or start fresh now."}\n' \
+        "$context_size" "$critical_threshold"
+elif [ "$context_size" -ge "$warn_threshold" ]; then
     printf '{"systemMessage": "Session context is at ~%s tokens (threshold %s) — consider wrapping up or starting fresh soon."}\n' \
-        "$context_size" "$threshold"
+        "$context_size" "$warn_threshold"
 fi
 
 exit 0
