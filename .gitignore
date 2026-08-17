@@ -35,3 +35,7 @@ __pycache__/
 .DS_Store
 *.swp
 *~
+
+# VS Code multi-root workspace — references the private extras repo's path,
+# host-specific and would break/leak for anyone forking this repo.
+*.code-workspace

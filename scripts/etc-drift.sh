@@ -13,6 +13,17 @@
 
 set -euo pipefail
 
+# Authenticate sudo up front, with stderr visible, so a TTY-less/auth
+# failure here is reported as what it is instead of being swallowed by a
+# later `git rev-parse` check and misread as "not a git repository".
+if ! sudo -v; then
+    echo "error   sudo authentication failed — run this in a real terminal" >&2
+    echo "        (fingerprint/password prompts need a real TTY; this" >&2
+    echo "        script cannot tell a failed sudo apart from a genuinely" >&2
+    echo "        missing /etc git repo if this check is skipped)" >&2
+    exit 2
+fi
+
 if ! sudo git -C /etc rev-parse --git-dir >/dev/null 2>&1; then
     echo "missing  /etc is not a git repository — etckeeper was never initialised"
     echo
