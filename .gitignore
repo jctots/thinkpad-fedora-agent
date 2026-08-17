@@ -25,6 +25,7 @@ test/*.generated.ks
 # transcript with `-c`. Ephemeral working state, not project narrative: the
 # vault's _inbox/ and incidents/ are where anything durable actually belongs.
 .claude/handover.md
+.claude/handover.consumed.md
 
 # Python bytecode. The hooks run as scripts, never as an imported package,
 # so nothing here is worth tracking.
