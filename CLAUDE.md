@@ -25,6 +25,25 @@ yours to apply first — a hook is a backstop, not a substitute for thinking.
 
 - **Show the command before running it.** Never propose an auto-approve
   permission mode for host-level work.
+- **Commands needing root: fire a heads-up, then authenticate for real.**
+  The Bash tool's subprocess has no controlling TTY, so plain `sudo`
+  can't read a typed password — but it genuinely *can* block on and
+  succeed from a fingerprint touch (no TTY needed for that path; only the
+  password path needs one). Pattern:
+  1. `NID=$(notify-send -u critical -i fingerprint -p "Claude Code"
+     "Place your finger now")` — real on-screen cue, correctly timed,
+     since my tool output isn't streamed live to the screen.
+  2. `sudo <command>` for the fingerprint path. If fingerprint isn't
+     available or fails, fall back to `pkexec <command>` — it reuses the
+     GNOME polkit dialog (the one already handling `rpm-ostree`) and has
+     a password field `sudo` alone doesn't.
+  3. `gdbus call --session --dest org.freedesktop.Notifications
+     --object-path /org/freedesktop/Notifications --method
+     org.freedesktop.Notifications.CloseNotification "$NID"` to clear the
+     banner once done.
+  This is still a double gate, not a shortcut around approval: Claude
+  Code's own per-call approval fires first, then the fingerprint/password
+  authenticates. See `incidents/I011`, `incidents/I012`.
 - **Prefer idempotent commands** — check before acting, safe to re-run.
 - **After any system change**, update the relevant script and manifest, and
   write up anything non-obvious: `incidents/I{nnn}-{slug}.md` from

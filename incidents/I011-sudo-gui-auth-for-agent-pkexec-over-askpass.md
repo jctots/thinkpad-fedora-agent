@@ -59,3 +59,17 @@ run under explicit human GUI authentication with fingerprint support.
 
 **Tally:** time-to-fix ~45m (spanning two sessions, including reboot wait)
 · first proposal: right
+
+**Correction (same session, later):** The Cause above is too broad. The
+no-TTY problem only blocks the *password* step of `sudo` — it needs to
+read keyboard input from a terminal that doesn't exist. The *fingerprint*
+step needs no keyboard input at all: `pam_fprintd` polls the sensor
+hardware directly via `fprintd`'s D-Bus service, and its "place your
+finger" message is a `PAM_TEXT_INFO` write to stderr, which needs no TTY
+either. Tested directly: plain `sudo <cmd>` (no `-A`, no askpass, no
+`pkexec`) genuinely blocks on and succeeds from a real fingerprint touch,
+confirmed by a negative control (told not to touch — it timed out and
+failed with "a password is required", proving it wasn't cached or
+bypassed). See I012 for the corrected, simpler pattern this led to.
+`pkexec` is still the right fallback for the password path, since that
+one really does need a TTY-equivalent (its GUI dialog).
