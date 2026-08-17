@@ -78,12 +78,13 @@ were made. Controller firmware itself has no rollback — Xbox controller firmwa
 updates are one-directional — but it's a known-good vendor update, not a risk
 specific to this fix.
 
-**Captured in:** not yet — still a one-off. Candidate follow-up: cross-reference this
-`.rpmmacros`-location finding into I004, and flag in
-`hosts/thinkpad-e14-gen5/quirks.sh`/README that this host now carries **two**
-kernel-version-pinned `kmod-*` packages (`kmod-nvidia`, `kmod-xpadneo`) needing
-manual toolbox rebuild on every kernel bump — worth considering as its own decision
-in the vault rather than two independent incidents, per CLAUDE.md's split.
+**Captured in:** `hosts/thinkpad-e14-gen5/quirks.sh` (xpadneo check block mirroring
+the NVIDIA one, plus corrected `.rpmmacros` location in both blocks' rebuild
+instructions) and `hosts/thinkpad-e14-gen5/README.md`. Still open: the
+`.rpmmacros`-location finding hasn't been cross-referenced into I004's own file, and
+whether "two kernel-pinned kmods on one host" deserves its own vault decision rather
+than living only in these two incidents is still an open question, not yet raised
+there.
 
 **Tally:** time-to-fix ~4h across two sessions (akmod dead-end + toolbox
 rebuild/signing + reboot ~3h, matching I004's pattern; raw-descriptor debugging +

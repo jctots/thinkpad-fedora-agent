@@ -141,3 +141,43 @@ match whenever the pinned driver version changes. `quirks.sh` checks both
 are present for the currently running driver version.
 
 Setup steps, MOK enrolment sequence, and current status: `quirks.sh`.
+
+## Xbox Wireless Controller (Bluetooth): two stacked bugs, both now fixed
+
+```
+Bus=0005 Vendor=045e Product=028e — Xbox Wireless Controller (BT)
+```
+
+Never worked out of the box: `hid-generic` rejected the descriptor with
+`unbalanced collection at end of report description` / `probe failed -22`.
+Full diagnosis: [I006](../../incidents/I006-xpadneo-unsigned-akmod-and-truncated-descriptor-firmware.md).
+
+**Same signing bug as the NVIDIA quirk above, same fix.** RPM Fusion's
+`akmod-xpadneo` builds unsigned in rpm-ostree's `%post` sandbox for the exact
+reason I004 documents. Fixed identically: `kmod-xpadneo` built and signed in
+a toolbox container, matched to the exact kernel version, layered as a
+`LocalPackage`. Same accepted trade-off as `kmod-nvidia`: no auto-rebuild on
+kernel updates — this host now carries **two** kernel-version-pinned
+`kmod-*` packages needing manual toolbox rebuild on every kernel bump.
+`quirks.sh` detects a stale pin for both.
+
+One new finding from I006, worth calling out separately since it likely also
+silently applied to the earlier NVIDIA build: `akmods` compiles as the
+**`akmods` system user** (via `runuser`), not as root or the invoking user —
+`.rpmmacros` has to live in `/var/cache/akmods/`, owned `akmods:akmods`, not
+in `~/.rpmmacros` or `/root/.rpmmacros`.
+
+**Signing was necessary but not sufficient.** Even after `kmod-xpadneo`
+loaded correctly signed, the controller still failed the identical
+"unbalanced collection" probe — decoding the raw HID descriptor
+(`debug_descriptor=1` module param) showed the controller's *own Bluetooth
+firmware* ships a truncated descriptor (unclosed collections, cut off
+mid-item). Confirmed against upstream `xpadneo` issues as a firmware-only
+bug with no Linux-side fix — SteamOS has no workaround for this either, only
+a recent warning added to Steam Deck for exactly this condition. Fixed by
+updating the controller's firmware via the **Xbox Accessories app** on a
+Windows machine (USB connection for the flash), then re-pairing over
+Bluetooth. No further change needed here — `kmod-xpadneo` bound immediately
+once the descriptor was valid.
+
+Setup steps, MOK enrolment reuse, and current status: `quirks.sh`.

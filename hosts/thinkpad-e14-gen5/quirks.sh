@@ -219,8 +219,10 @@ if [ "$kmod_missing" -eq 1 ]; then
   echo "     xorg-x11-drv-nvidia-kmodsrc (version-matched), kernel-devel for"
   echo "     $running_kernel, akmods, gcc, make, elfutils-libelf-devel"
   echo "  2. Copy /etc/pki/akmods/private/private_key.priv and the matching"
-  echo "     cert to a user-owned dir, point ~/.rpmmacros"
-  echo "     _kmodtool_signmodules_privkey/_pubkey at the copies"
+  echo "     cert into /var/cache/akmods/, owned akmods:akmods, and put"
+  echo "     .rpmmacros there too (NOT ~/.rpmmacros or /root/.rpmmacros —"
+  echo "     akmodsbuild runs as the 'akmods' system user via runuser, which"
+  echo "     can't see macros in root's or the invoking user's home; see I006)"
   echo "  3. akmods --kernels $running_kernel --kmod nvidia"
   echo "  4. Verify signed: modinfo shows '~Module signature appended~',"
   echo "     sig_id PKCS#7, signer matching the enrolled MOK"
@@ -229,6 +231,90 @@ if [ "$kmod_missing" -eq 1 ]; then
   echo "  7. systemctl reboot"
   echo "  8. after reboot: nvidia-smi   (confirms the driver is loaded)"
   echo "  9. delete the copied private key from both host and toolbox"
+fi
+
+echo
+
+# --- Xbox Wireless Controller (BT): proprietary rumble/mapping driver, pinned kmod-xpadneo ---
+# Same shape as the NVIDIA quirk above, same root cause: RPM Fusion-style
+# akmod-xpadneo builds unsigned in rpm-ostree's `%post` sandbox despite a
+# correctly enrolled MOK — see
+# incidents/I006-xpadneo-unsigned-akmod-and-truncated-descriptor-firmware.md.
+# Fixed the same way: kmod-xpadneo built and signed in a toolbox container,
+# pinned to one exact kernel build, layered as a LocalPackage. Same
+# trade-off, same consequence: does NOT auto-rebuild on kernel updates, and
+# this check starts failing the next time the kernel bumps.
+#
+# Second, unrelated finding from I006: even a correctly signed and loaded
+# xpadneo can still fail to bind if the controller's own Bluetooth firmware
+# is out of date — some units ship a truncated HID report descriptor. That
+# has no driver-side fix; the controller has to be updated via the Xbox
+# Accessories app (Windows/Xbox console/Android) at least once. This check
+# can only verify the *driver* side; a controller with stale firmware will
+# still fail to appear in `/proc/bus/input/devices` even with everything
+# below green.
+
+xpadneo_missing=0
+installed_xpadneo_kmod="$(rpm -qa 'kmod-xpadneo-*' 2>/dev/null | head -n1)"
+if [ -n "$installed_xpadneo_kmod" ]; then
+  if [[ "$installed_xpadneo_kmod" == "kmod-xpadneo-${running_kernel}"* ]]; then
+    echo "ok      $installed_xpadneo_kmod matches running kernel ($running_kernel)"
+  else
+    echo "missing kmod-xpadneo for running kernel — installed package is"
+    echo "        '$installed_xpadneo_kmod' but running kernel is '$running_kernel'."
+    echo "        A kernel update landed since the pinned build; the Xbox"
+    echo "        controller will fall back to hid-generic (no rumble) or"
+    echo "        fail to bind entirely until this is rebuilt."
+    xpadneo_missing=1
+  fi
+else
+  echo "missing kmod-xpadneo (no pinned build installed — see incidents/I006)"
+  xpadneo_missing=1
+fi
+
+if rpm -q akmod-xpadneo >/dev/null 2>&1; then
+  echo "warn    akmod-xpadneo is ALSO installed — this shouldn't be layered"
+  echo "        alongside the pinned kmod-xpadneo (see I006: its build is"
+  echo "        unsigned on this host and will conflict). Expected fix:"
+  echo "        sudo rpm-ostree uninstall akmod-xpadneo"
+  xpadneo_missing=1
+fi
+
+xpadneo_kmod_missing=0
+if [ -z "$installed_xpadneo_kmod" ] || [[ "$installed_xpadneo_kmod" != "kmod-xpadneo-${running_kernel}"* ]]; then
+  xpadneo_kmod_missing=1
+fi
+
+if [ "$xpadneo_missing" -eq 1 ]; then
+  overall_missing=1
+fi
+
+if [ "$xpadneo_kmod_missing" -eq 1 ]; then
+  echo
+  echo "To (re)build a signed kmod-xpadneo for the running kernel"
+  echo "($running_kernel), in a toolbox container (see I006, and I004 for the"
+  echo "underlying sandbox-signing procedure this mirrors):"
+  echo "  1. In toolbox: install rpmfusion-{free,nonfree}-release,"
+  echo "     kernel-devel for $running_kernel, akmods, gcc, make,"
+  echo "     elfutils-libelf-devel, akmod-xpadneo (source package)"
+  echo "  2. Copy /etc/pki/akmods/private/private_key.priv and the matching"
+  echo "     cert into /var/cache/akmods/, owned akmods:akmods, and put"
+  echo "     .rpmmacros there too (NOT ~/.rpmmacros or /root/.rpmmacros —"
+  echo "     akmodsbuild runs as the 'akmods' system user via runuser; see I006)"
+  echo "  3. akmods --kernels $running_kernel --kmod xpadneo"
+  echo "  4. Verify signed: modinfo shows '~Module signature appended~',"
+  echo "     sig_id PKCS#7, signer matching the enrolled MOK"
+  echo "  5. On host: sudo rpm-ostree uninstall akmod-xpadneo   (if present)"
+  echo "  6. sudo rpm-ostree install /path/to/kmod-xpadneo-${running_kernel}-*.rpm"
+  echo "  7. systemctl reboot"
+  echo "  8. after reboot: pair/reconnect the controller, check"
+  echo "     /proc/bus/input/devices for an Xbox entry"
+  echo "  9. delete the copied private key from both host and toolbox"
+  echo
+  echo "If the driver is signed and loaded but the controller still doesn't"
+  echo "bind ('unbalanced collection' / 'parse failed' in journalctl -k),"
+  echo "that's not this — see I006: update the controller's own Bluetooth"
+  echo "firmware via the Xbox Accessories app (Windows/Xbox console/Android)."
 fi
 
 if [ "$overall_missing" -eq 1 ]; then
