@@ -28,6 +28,7 @@ times the agent could not help is measuring the arrangement on its best days.
 
 | # | Date | Area | Symptom | Time to fix | 1st proposal right? | Captured in |
 |---|---|---|---|---|---|---|
+| [I006](I006-xpadneo-unsigned-akmod-and-truncated-descriptor-firmware.md) | 2026-08-17 | rpm-ostree | Xbox Wireless Controller (BT) never worked — unsigned akmod (same as I004) + separately, controller's own BT firmware shipped a truncated HID report descriptor | ~4h (2 sessions) | ✗ | not yet — still a one-off |
 | [I005](I005-steam-flatpak-32bit-nvidia-prime-offload-missing-runtime.md) | 2026-08-17 | flatpak | Steam-wide PRIME offload env vars set correctly but 32-bit games (Portal 2) still rendered on iGPU — missing matching GL32.nvidia Flatpak runtime | ~20m | ✓ | `hosts/thinkpad-e14-gen5/quirks.sh` |
 | [I004](I004-nvidia-akmod-unsigned-in-rpm-ostree-post-sandbox.md) | 2026-08-17 | rpm-ostree | akmod-nvidia builds unsigned kernel module inside rpm-ostree's `%post` sandbox despite valid enrolled MOK key | ~3h | ✗ | `hosts/thinkpad-e14-gen5/quirks.sh` |
 | [I003](I003-gsconnect-pixel-pairing-wrong-zone-and-dbus-activation.md) | 2026-08-16 | gnome | GSConnect installed, firewall opened, but Pixel never appeared to pair | ~45m | ✗ | `thinkpad-fedora-extras/gnome-extensions.sh` |
