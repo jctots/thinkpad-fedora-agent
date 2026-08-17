@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # Report-only drift check across everything this project's manifests cover:
-# the OS image (rpm-ostree) and every flatpak listed in this repo's
+# the OS image (rpm-ostree), every flatpak listed in this repo's
 # scripts/install-flatpaks.sh plus, if EXTRAS_DIR is set, the private
-# extras repo's flatpaks.sh. Same contract as those scripts: this one never
-# calls rpm-ostree upgrade or flatpak update itself, only prints what's
-# outdated and the exact command to fix it.
+# extras repo's flatpaks.sh, the full flatpak install (runtimes/extensions
+# included, not just manifest apps — GNOME Software's "App Updates" list
+# is often really a runtime update attributed to the apps that depend on
+# it), and firmware via fwupd/LVFS. Same contract as install-flatpaks.sh:
+# this one never calls rpm-ostree upgrade, flatpak update, or fwupdmgr
+# update itself, only prints what's outdated and the exact command to fix
+# it.
 #
-# Idempotent, read-only: safe to re-run any time. rpm-ostree upgrade --check
-# and flatpak/remote-info queries touch the network but change nothing
-# installed.
+# Idempotent, read-only: safe to re-run any time. rpm-ostree upgrade --check,
+# flatpak/remote-info queries, `flatpak update` answered "n" at its prompt,
+# and fwupdmgr get-updates touch the network but change nothing installed.
 #
 # Usage: scripts/update-check.sh
 
@@ -79,8 +83,48 @@ if [ "${#outdated[@]}" -gt 0 ]; then
     for id in "${outdated[@]}"; do
         echo "  flatpak update $id"
     done
-    exit 1
+else
+    echo
+    echo "all checked flatpaks current"
 fi
 
 echo
-echo "all checked flatpaks current"
+echo "== Flatpak, full system (runtimes/extensions included) =="
+if command -v flatpak >/dev/null 2>&1; then
+    # `flatpak update` queries for updates before it asks to proceed;
+    # answering "n" aborts before anything is pulled or deployed. This is
+    # the only way to see runtime/extension drift (e.g. a GL/VAAPI driver
+    # extension) that the per-manifest commit comparison above can't catch,
+    # since it only walks the app IDs literally listed in the manifests.
+    fp_preview="$(printf 'n\n' | flatpak update 2>&1 || true)"
+    if echo "$fp_preview" | grep -qE '^\s*[0-9]+\.'; then
+        echo "$fp_preview" | grep -E '^\s*[0-9]+\.|^ID |^Ref '
+        echo
+        echo "Run: flatpak update   (interactive — review the list, confirm y)"
+    elif echo "$fp_preview" | grep -qi "Nothing to do"; then
+        echo "all installed flatpaks (system-wide) current"
+    else
+        echo "$fp_preview" | tail -5
+    fi
+else
+    echo "flatpak not found — skipping"
+fi
+
+echo
+echo "== Firmware (fwupd/LVFS) =="
+if command -v fwupdmgr >/dev/null 2>&1; then
+    fwupdmgr refresh >/dev/null 2>&1 || true
+    fw_out="$(fwupdmgr get-updates 2>&1)" || true
+    if echo "$fw_out" | grep -q "New version:"; then
+        echo "$fw_out" | grep -E "^LENOVO|Current version:|New version:|Summary:" || echo "$fw_out"
+        echo
+        echo "Firmware updates flash hardware directly — none of this repo's three"
+        echo "reversibility layers (OS image / /etc / /var/home) cover that, so this"
+        echo "agent will not run fwupdmgr update itself. Run it yourself:"
+        echo "  fwupdmgr update"
+    else
+        echo "no firmware updates available"
+    fi
+else
+    echo "fwupdmgr not found — skipping"
+fi

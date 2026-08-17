@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
 # Launched by ~/.config/autostart/thinkpad-fedora-agent.desktop on graphical
-# login. If a handover file was left before a reboot, resume from it;
-# otherwise start a fresh session.
+# login, and equally valid for a manually-typed launch in this repo.
 #
-# The handover file is consumed, not just read: it's renamed to
-# .claude/handover.consumed.md *before* claude ever starts, so the
-# .claude/handover.md existence check can never match the same file across
-# two reboots. Without this, a stale handover.md left after being read once
-# (e.g. the user just /exit's instead of asking for a fresh write) would
-# surface as "resume from" instructions on every subsequent reboot, forever.
+# additionalContext from a SessionStart hook can't trigger a turn on its
+# own — Claude Code only calls the model once the user submits a prompt, so
+# a "silent" resume never actually appears until the user types something
+# first (see incidents/I010). There is no supported invisible-trigger
+# mechanism today (tracked upstream as anthropics/claude-code#69750).
+#
+# So every launch sends the same fixed prompt, unconditionally — no
+# handover-file check here. The branching (resume from handover vs. plain
+# greeting + quote) happens agent-side on receiving this trigger; see
+# .claude/skills/handover/SKILL.md's read-mode section.
 set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_dir"
 
-if [[ -f .claude/handover.md ]]; then
-  mv .claude/handover.md .claude/handover.consumed.md
-  exec claude "Read .claude/handover.consumed.md and resume from where I left off."
-else
-  exec claude
-fi
+exec claude "I'm back"

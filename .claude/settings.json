@@ -10,7 +10,6 @@
     "There is no auto-approve mode here and there must never be one. Default",
     "(manual) mode is the arrangement that makes real privilege affordable."
   ],
-
   "permissions": {
     "deny": [
       "Edit(.claude/hooks/**)",
@@ -18,7 +17,6 @@
       "Edit(~/.claude/settings.json)",
       "Edit(~/.claude/settings.local.json)",
       "Read(./local/secrets.env)",
-
       "Bash(wipefs:*)",
       "Bash(mkfs:*)",
       "Bash(mkfs.*:*)",
@@ -32,7 +30,6 @@
       "Bash(pvremove:*)",
       "Bash(ostree admin undeploy:*)"
     ],
-
     "ask": [
       "Bash(sudo:*)",
       "Bash(pkexec:*)",
@@ -44,7 +41,6 @@
       "Bash(fprintd-enroll:*)",
       "Bash(authselect:*)"
     ],
-
     "allow": [
       "Bash(rpm-ostree status)",
       "Bash(rpm-ostree db list:*)",
@@ -60,7 +56,6 @@
       "Bash(git log:*)"
     ]
   },
-
   "hooks": {
     "UserPromptSubmit": [
       {

@@ -1,6 +1,6 @@
 ---
 name: handover
-description: Write or read .claude/handover.md, a session-continuity snapshot used instead of `claude -c` around a reboot-triggering action. Use in write mode proactively before anything likely to end the session (systemctl reboot, rpm-ostree rebase, anything requiring a restart); use in read mode when the user says they're back after a reboot.
+description: Write or read .claude/handover.md, a session-continuity snapshot used instead of `claude -c` around a reboot-triggering action. Use in write mode proactively before anything likely to end the session (systemctl reboot, rpm-ostree rebase, anything requiring a restart); use in read mode whenever the session's first turn is the literal message "I'm back" — sent automatically by scripts/session-autostart.sh on every launch, not typed by the human — or when the user says they're back after a reboot by hand.
 ---
 
 Normally reached via `/end-session`, which checks whether a reboot is
@@ -38,36 +38,56 @@ Trigger proactively, without being asked, before `systemctl reboot`,
 
 ## Read mode — "I'm back" / after a reboot
 
+`scripts/session-autostart.sh` sends the literal trigger `"I'm back"` as
+the CLI prompt argument on **every** launch — unconditionally, whether or
+not a handover is actually pending. That's a deliberate simplification
+(see "Why the trigger is unconditional" below): the branching happens here,
+not in bash.
+
+On receiving that trigger (or an equivalent manual "I'm back" from the
+user):
+
 1. Start a **new** session — no `-c`. Don't assume the old transcript is
    available or needed.
-2. Read `.claude/handover.md` (or `.claude/handover.consumed.md` if the
-   autostart flow already renamed it — see below) plus this project's
-   memory files.
-3. Surface the "Immediately next" step as the first thing said back to the
-   user, not buried after a recap.
-4. Flag if the file looks stale — references a reboot that's now old, or
-   contradicts current `git log` / `rpm-ostree status` — rather than
-   trusting it blindly.
+2. Check whether `.claude/handover.md` exists.
+   - **Present:** rename it to `.claude/handover.consumed.md` (`mv`, so
+     consumption is atomic — a hang mid-session can't reprocess the same
+     file on the next launch), then read it plus this project's memory
+     files. Surface the "Immediately next" step as the first thing said
+     back to the user, not buried after a recap. Flag if the file looks
+     stale — references a reboot that's now old, or contradicts current
+     `git log` / `rpm-ostree status` — rather than trusting it blindly.
+   - **Absent:** no resume needed. Give a plain, short greeting — who you
+     are and an invitation to start, no recap of prior work unless asked —
+     and close it with a quote picked via `shuf -n1 scripts/quotes.txt`
+     (zero-token random pick; don't generate or web-search a quote
+     yourself). Don't recite "there's nothing pending" as a status report.
 
-## Consumed automatically by the autostart flow
+## Why the trigger is unconditional
 
-`scripts/session-autostart.sh` (run by
-`~/.config/autostart/thinkpad-fedora-agent.desktop` on login) renames
-`.claude/handover.md` to `.claude/handover.consumed.md` *before* launching
-Claude, then points the resume prompt at the renamed file. This makes
-consumption atomic and automatic: a handover file can only ever trigger a
-"resume from" prompt once, on the very next login. If the user just
-`/exit`s without a fresh write, or reboots again before writing a new one,
-the second reboot starts a plain session instead of replaying stale
-"immediately next" instructions — there's nothing left at `.claude/handover.md`
-for the existence check to match. Both filenames are gitignored; the
-`.consumed.md` copy is left on disk (not deleted) so a session can still
-recover it for debugging if the resume looks wrong.
+An earlier design (see `incidents/I009`, `incidents/I010`) tried to do the
+handover check and rename silently via a `SessionStart` hook's
+`additionalContext`, specifically to avoid a visible synthetic first turn.
+That doesn't work: `additionalContext` only feeds the *next* model call —
+Claude Code never calls the model until the user submits a prompt, so
+nothing appeared until the human typed something first, at which point any
+resume context looked stale. There is no supported way to get an invisible
+proactive first turn today (tracked upstream:
+anthropics/claude-code#69750, proposing an `autoPrompt` hook field).
 
-Because of this, if you're writing a handover file for a plain `/exit` (no
-autostart-triggering reboot expected next), it will just sit there — the
-rename only happens inside `session-autostart.sh`. Prefer only writing one
-when a reboot through the autostart path is actually expected next.
+Given that, `session-autostart.sh` doesn't try to inspect the filesystem
+at all — it just always sends the same visible trigger, and this skill
+does the branching once the model is actually running. That keeps the
+script trivial (no bash logic that can drift out of sync with what this
+skill expects) and means both outcomes — resume, or plain greeting + quote
+— go through the exact same code path.
+
+Because the rename happens here, not in the script, a handover file
+written before a plain `/exit` (no autostart launch expected right after)
+just sits there until the next `session-autostart.sh` run actually
+reaches this skill. Prefer only writing one when another autostarted or
+scripted session is actually expected next; a manually-launched `claude -c`
+won't trigger this skill at all.
 
 ## When not to use this
 
