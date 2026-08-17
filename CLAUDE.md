@@ -25,25 +25,21 @@ yours to apply first — a hook is a backstop, not a substitute for thinking.
 
 - **Show the command before running it.** Never propose an auto-approve
   permission mode for host-level work.
-- **Commands needing root: fire a heads-up, then authenticate for real.**
-  The Bash tool's subprocess has no controlling TTY, so plain `sudo`
-  can't read a typed password — but it genuinely *can* block on and
-  succeed from a fingerprint touch (no TTY needed for that path; only the
-  password path needs one). Pattern:
-  1. `NID=$(notify-send -u critical -i fingerprint -p "Claude Code"
-     "Place your finger now")` — real on-screen cue, correctly timed,
-     since my tool output isn't streamed live to the screen.
-  2. `sudo <command>` for the fingerprint path. If fingerprint isn't
-     available or fails, fall back to `pkexec <command>` — it reuses the
-     GNOME polkit dialog (the one already handling `rpm-ostree`) and has
-     a password field `sudo` alone doesn't.
-  3. `gdbus call --session --dest org.freedesktop.Notifications
-     --object-path /org/freedesktop/Notifications --method
-     org.freedesktop.Notifications.CloseNotification "$NID"` to clear the
-     banner once done.
+- **Commands needing root: use `pkexec <command>`, not plain `sudo`.**
+  `pkexec` triggers GNOME's own polkit dialog — a real window that appears
+  on screen unprompted, so it needs no separate heads-up (my tool output
+  isn't streamed live to the screen, but the dialog itself is visible
+  regardless). It authenticates via the same `system-auth` PAM stack as
+  `sudo` (`authselect`'s `with-fingerprint` feature covers both — verified
+  2026-08-18), so fingerprint still works, with password as its own
+  built-in fallback — one mechanism, not two to maintain. It also closes
+  itself on success or cancel, unlike a hand-fired notification.
   This is still a double gate, not a shortcut around approval: Claude
-  Code's own per-call approval fires first, then the fingerprint/password
-  authenticates. See `incidents/I011`, `incidents/I012`.
+  Code's own per-call approval fires first, then the polkit dialog
+  authenticates. See `incidents/I011`, `incidents/I012`, and
+  `.claude/proposals/P005-fingerprint-gate-for-sudo-pkexec-approval.md`
+  (superseded — records why a plain-`sudo` + hand-rolled notification
+  pattern was dropped in favor of this).
 - **Prefer idempotent commands** — check before acting, safe to re-run.
 - **After any system change**, update the relevant script and manifest, and
   write up anything non-obvious: `incidents/I{nnn}-{slug}.md` from
