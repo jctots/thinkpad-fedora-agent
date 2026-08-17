@@ -171,6 +171,36 @@ if [ -z "$installed_kmod" ] || [[ "$installed_kmod" != "kmod-nvidia-${running_ke
   kmod_missing=1
 fi
 
+# Steam's flatpak-wide __GLX_VENDOR_LIBRARY_NAME=nvidia override is a silent
+# no-op without a driver-version-matched GL.nvidia runtime extension — see
+# I005. Checked here, not just documented, because there's no error when
+# it's missing: GLVND just falls back to Mesa and the dGPU sits idle.
+if command -v nvidia-smi >/dev/null 2>&1; then
+  driver_version="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null)"
+  # Flatpak extension IDs use dashes (610-57-04), nvidia-smi reports dots (610.57.04).
+  driver_version_dashed="${driver_version//./-}"
+  if [ -n "$driver_version_dashed" ]; then
+    flatpak_gl_missing=0
+    if flatpak info "org.freedesktop.Platform.GL.nvidia-${driver_version_dashed}" >/dev/null 2>&1; then
+      echo "ok      flatpak GL.nvidia-${driver_version_dashed} runtime installed (64-bit games)"
+    else
+      echo "missing flatpak GL.nvidia-${driver_version_dashed} runtime (64-bit games silently render on iGPU — see I005)"
+      nvidia_missing=1
+      flatpak_gl_missing=1
+    fi
+    if flatpak info "org.freedesktop.Platform.GL32.nvidia-${driver_version_dashed}" >/dev/null 2>&1; then
+      echo "ok      flatpak GL32.nvidia-${driver_version_dashed} runtime installed (32-bit games)"
+    else
+      echo "missing flatpak GL32.nvidia-${driver_version_dashed} runtime (32-bit games silently render on iGPU — see I005)"
+      nvidia_missing=1
+      flatpak_gl_missing=1
+    fi
+    if [ "$flatpak_gl_missing" -eq 1 ]; then
+      echo "Run: sudo flatpak install --system flathub org.freedesktop.Platform.GL.nvidia-${driver_version_dashed} org.freedesktop.Platform.GL32.nvidia-${driver_version_dashed}"
+    fi
+  fi
+fi
+
 if [ "${#simple_nvidia_pkgs[@]}" -gt 0 ]; then
   echo
   echo "Run: sudo rpm-ostree install ${simple_nvidia_pkgs[*]}   (reboot required)"

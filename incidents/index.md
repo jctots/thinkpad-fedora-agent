@@ -28,6 +28,7 @@ times the agent could not help is measuring the arrangement on its best days.
 
 | # | Date | Area | Symptom | Time to fix | 1st proposal right? | Captured in |
 |---|---|---|---|---|---|---|
+| [I005](I005-steam-flatpak-32bit-nvidia-prime-offload-missing-runtime.md) | 2026-08-17 | flatpak | Steam-wide PRIME offload env vars set correctly but 32-bit games (Portal 2) still rendered on iGPU — missing matching GL32.nvidia Flatpak runtime | ~20m | ✓ | `hosts/thinkpad-e14-gen5/quirks.sh` |
 | [I004](I004-nvidia-akmod-unsigned-in-rpm-ostree-post-sandbox.md) | 2026-08-17 | rpm-ostree | akmod-nvidia builds unsigned kernel module inside rpm-ostree's `%post` sandbox despite valid enrolled MOK key | ~3h | ✗ | `hosts/thinkpad-e14-gen5/quirks.sh` |
 | [I003](I003-gsconnect-pixel-pairing-wrong-zone-and-dbus-activation.md) | 2026-08-16 | gnome | GSConnect installed, firewall opened, but Pixel never appeared to pair | ~45m | ✗ | `thinkpad-fedora-extras/gnome-extensions.sh` |
 | [I001](I001-libfprint-tod-override-hardlink-checkout.md) | 2026-08-16 | rpm-ostree | `override replace` hardlink-checkout failure replacing `libfprint` with the Goodix TOD build | ~25m | ✗ | `hosts/thinkpad-e14-gen5/quirks.sh` |

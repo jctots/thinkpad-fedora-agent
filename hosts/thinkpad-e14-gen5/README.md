@@ -118,4 +118,26 @@ Steam package choice and rationale live in `thinkpad-fedora-extras`
 `PACKAGES.md` (an app choice, not a host quirk) — this override is
 documented there too since it's Steam-specific config, not GPU-driver setup.
 
+**Env vars alone are not sufficient for 32-bit games**
+([I005](../../incidents/I005-steam-flatpak-32bit-nvidia-prime-offload-missing-runtime.md)):
+GLVND needs an actual NVIDIA GLX vendor library available inside the Steam
+Flatpak's sandbox, driver-version-matched. Flatpak normally auto-installs
+this on detecting the host driver, but that hook doesn't fire for this
+host's manually pinned `kmod-nvidia` build (see I004) — Flatpak's detection
+doesn't recognize it. Without the extension, `__GLX_VENDOR_LIBRARY_NAME=nvidia`
+is silently ignored and GLVND falls back to Mesa; there is no error, only an
+idle dGPU in `nvidia-smi`/`nvtop`. Required, version-matched to the running
+driver (`nvidia-smi --query-gpu=driver_version --format=csv,noheader`):
+
+```
+sudo flatpak install --system flathub \
+  org.freedesktop.Platform.GL.nvidia-<version> \
+  org.freedesktop.Platform.GL32.nvidia-<version>
+```
+
+64-bit-only games need just the first; any 32-bit game (older Source engine
+titles like Portal 2) needs the `GL32` variant too. Must be reinstalled to
+match whenever the pinned driver version changes. `quirks.sh` checks both
+are present for the currently running driver version.
+
 Setup steps, MOK enrolment sequence, and current status: `quirks.sh`.
