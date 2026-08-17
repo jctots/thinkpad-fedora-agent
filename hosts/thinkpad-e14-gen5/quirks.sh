@@ -55,20 +55,154 @@ else
   steps_needed=1
 fi
 
+overall_missing=0
+
 if [ "$steps_needed" -eq 0 ]; then
   echo
   echo "all fingerprint driver components present — enrolment is still manual"
   echo "(fprintd-enroll), see docs/bootstrap.md Part 4"
-  exit 0
+else
+  overall_missing=1
+  echo
+  echo "Run (as separate, reviewable commands — do not chain):"
+  echo "  sudo curl -Lo $REPO_FILE \"$REPO_URL\""
+  echo "  sudo rpm-ostree override remove libfprint"
+  echo "  sudo rpm-ostree install libfprint-tod libfprint-tod-goodix"
+  echo "  # ^ must be two separate invocations, not one 'override replace' —"
+  echo "  #   see incidents/I001-libfprint-tod-override-hardlink-checkout.md"
+  echo "  systemctl reboot"
+  echo "  # after reboot: fprintd-enroll   (manual, needs a finger — not scripted)"
 fi
 
 echo
-echo "Run (as separate, reviewable commands — do not chain):"
-echo "  sudo curl -Lo $REPO_FILE \"$REPO_URL\""
-echo "  sudo rpm-ostree override remove libfprint"
-echo "  sudo rpm-ostree install libfprint-tod libfprint-tod-goodix"
-echo "  # ^ must be two separate invocations, not one 'override replace' —"
-echo "  #   see incidents/I001-libfprint-tod-override-hardlink-checkout.md"
-echo "  systemctl reboot"
-echo "  # after reboot: fprintd-enroll   (manual, needs a finger — not scripted)"
-exit 1
+
+# --- NVIDIA MX550 dGPU: proprietary driver, pinned kmod-nvidia (RPM Fusion) ---
+# This host has an NVIDIA GeForce MX550 (TU117) dGPU alongside the Intel
+# Iris Xe iGPU (Optimus/hybrid graphics). It ran fine on the in-tree open
+# `nouveau` driver (PRIME offload via DRI_PRIME worked), but nouveau has no
+# NVML equivalent, so GPU monitoring tools (nvtop) can never see it — see
+# thinkpad-fedora-agent GPU check, 2026-08-17.
+#
+# NOT using RPM Fusion's akmod-nvidia: its rpm-ostree `%post` build sandbox
+# cannot see /etc/pki/akmods/private at build time, so the module it
+# produces is never signed, even with a correctly enrolled MOK key — see
+# incidents/I004-nvidia-akmod-unsigned-in-rpm-ostree-post-sandbox.md for the
+# full diagnosis (proved via a toolbox-container reproduction).
+#
+# Instead: a `kmod-nvidia` package built and signed in a toolbox container
+# (where the signing key IS visible), pinned to one exact kernel build, and
+# layered as a LocalPackage. Trade-off, accepted deliberately (see I004 and
+# the matching vault decision entry): this does NOT auto-rebuild on kernel
+# updates like akmod-nvidia would. On the next `rpm-ostree upgrade` that
+# bumps the kernel, this check will start failing — the fix is re-running
+# the toolbox build+sign for the new kernel version and reinstalling.
+#
+# Secure Boot is enabled on this host; the MOK key from the original
+# akmod-nvidia attempt is already enrolled and reused for this signing.
+
+nvidia_missing=0
+running_kernel="$(uname -r)"
+
+installed_kmod="$(rpm -qa 'kmod-nvidia-*' 2>/dev/null | head -n1)"
+if [ -n "$installed_kmod" ]; then
+  if [[ "$installed_kmod" == "kmod-nvidia-${running_kernel}"* ]]; then
+    echo "ok      $installed_kmod matches running kernel ($running_kernel)"
+  else
+    echo "missing kmod-nvidia for running kernel — installed package is"
+    echo "        '$installed_kmod' but running kernel is '$running_kernel'."
+    echo "        A kernel update landed since the pinned build; nouveau (or"
+    echo "        nothing) is loading until this is rebuilt for the new kernel."
+    nvidia_missing=1
+  fi
+else
+  echo "missing kmod-nvidia (no pinned build installed — see incidents/I004)"
+  nvidia_missing=1
+fi
+
+if rpm -q akmod-nvidia >/dev/null 2>&1; then
+  echo "warn    akmod-nvidia is ALSO installed — this shouldn't be layered"
+  echo "        alongside the pinned kmod-nvidia (see I004: its build is"
+  echo "        unsigned on this host and will conflict). Expected fix:"
+  echo "        sudo rpm-ostree uninstall akmod-nvidia"
+  nvidia_missing=1
+fi
+
+simple_nvidia_pkgs=()
+
+if rpm -q xorg-x11-drv-nvidia-cuda >/dev/null 2>&1; then
+  echo "ok      xorg-x11-drv-nvidia-cuda installed"
+else
+  echo "missing xorg-x11-drv-nvidia-cuda"
+  nvidia_missing=1
+  simple_nvidia_pkgs+=("xorg-x11-drv-nvidia-cuda")
+fi
+
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+  echo "ok      nvidia-smi reports the driver is loaded and working"
+else
+  echo "missing nvidia-smi (module not loaded)"
+  nvidia_missing=1
+fi
+
+if mokutil --list-enrolled 2>/dev/null | grep -qi akmods; then
+  echo "ok      akmods signing key enrolled in MOK"
+else
+  echo "missing akmods signing key enrolled in MOK (required — Secure Boot is enabled on this host)"
+  nvidia_missing=1
+fi
+
+# nvtop verifies this quirk works, not an app choice — belongs here rather
+# than thinkpad-fedora-extras (moved from there 2026-08-17). Its NVIDIA
+# support goes exclusively through NVML (libnvidia-ml.so), which only
+# exists once the driver above is actually loaded — nvtop has no nouveau
+# equivalent at all, so this check doubles as an end-to-end signal that the
+# whole quirk (kmod-nvidia + MOK) is working, not just that the package is
+# present.
+if rpm -q nvtop >/dev/null 2>&1; then
+  echo "ok      nvtop installed (GPU monitor — confirms this quirk end-to-end)"
+else
+  echo "missing nvtop"
+  nvidia_missing=1
+  simple_nvidia_pkgs+=("nvtop")
+fi
+
+kmod_missing=0
+if [ -z "$installed_kmod" ] || [[ "$installed_kmod" != "kmod-nvidia-${running_kernel}"* ]]; then
+  kmod_missing=1
+fi
+
+if [ "${#simple_nvidia_pkgs[@]}" -gt 0 ]; then
+  echo
+  echo "Run: sudo rpm-ostree install ${simple_nvidia_pkgs[*]}   (reboot required)"
+fi
+
+if [ "$nvidia_missing" -eq 1 ]; then
+  overall_missing=1
+fi
+
+if [ "$kmod_missing" -eq 1 ]; then
+  echo
+  echo "To (re)build a signed kmod-nvidia for the running kernel"
+  echo "($running_kernel), in a toolbox container (see I004 for the full"
+  echo "procedure and why it must be toolbox, not the rpm-ostree sandbox):"
+  echo "  1. In toolbox: install rpmfusion-{free,nonfree}-release, pciutils,"
+  echo "     xorg-x11-drv-nvidia-kmodsrc (version-matched), kernel-devel for"
+  echo "     $running_kernel, akmods, gcc, make, elfutils-libelf-devel"
+  echo "  2. Copy /etc/pki/akmods/private/private_key.priv and the matching"
+  echo "     cert to a user-owned dir, point ~/.rpmmacros"
+  echo "     _kmodtool_signmodules_privkey/_pubkey at the copies"
+  echo "  3. akmods --kernels $running_kernel --kmod nvidia"
+  echo "  4. Verify signed: modinfo shows '~Module signature appended~',"
+  echo "     sig_id PKCS#7, signer matching the enrolled MOK"
+  echo "  5. On host: sudo rpm-ostree uninstall akmod-nvidia   (if present)"
+  echo "  6. sudo rpm-ostree install /path/to/kmod-nvidia-${running_kernel}-*.rpm"
+  echo "  7. systemctl reboot"
+  echo "  8. after reboot: nvidia-smi   (confirms the driver is loaded)"
+  echo "  9. delete the copied private key from both host and toolbox"
+fi
+
+if [ "$overall_missing" -eq 1 ]; then
+  exit 1
+fi
+
+echo "all quirks satisfied"
