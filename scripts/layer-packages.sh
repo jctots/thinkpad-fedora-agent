@@ -20,6 +20,7 @@ packages=(
   "gitleaks|pre-commit secret scan — bootstrap.md §3.8, .githooks/pre-commit refuses to run without it"
   "make|this repo's documented interface (make probe, make check, make hooks) — bootstrap.md §3.7/§3.8"
   "tailscale|home-lab reachability off the LAN — bootstrap.md §3.4b, needed for the vault's RAG backend, the kopia NAS backup, and recovery.md Card 3"
+  "v4l-utils|UVC camera diagnostics/controls (v4l2-ctl, qv4l2) — generic tool for any video-capture device, no host-specific quirk involved"
 )
 
 missing=()
