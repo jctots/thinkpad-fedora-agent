@@ -15,6 +15,12 @@ test/*.generated.ks
 .claude/audit/
 *.jsonl
 
+# Security/privacy check reports — machine state (Lynis findings, Flatpak
+# overrides), regenerated on demand by scripts/security-privacy-check.sh.
+# Same reasoning as .claude/audit/: point-in-time local output, not project
+# narrative.
+.claude/security-reports/
+
 # Local permission overrides — additionalDirectories points at an absolute,
 # host-specific path to the vault clone. Same reasoning as local/: never inline
 # a host-specific value into a committed file.

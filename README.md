@@ -91,6 +91,7 @@ of waiting to be asked.
 | 🧳 `/handover` | Snapshots session state to `.claude/handover.md` before a reboot-triggering action, and reads it back in on the next session | 🤖 Agent, proactively — already standing practice, this just formalizes it |
 | ⬆️ `/update-check` | Reports OS image staleness (`rpm-ostree upgrade --check`) and drift across both flatpak manifests (public + private extras) — current/outdated/missing, never runs the upgrade itself | 🤖 Agent for the check; 🧑 human approves the shown `rpm-ostree upgrade` or `flatpak update` if one's needed |
 | 🩹 `/reset-triage` | On every session start, checks whether the previous boot ended uncleanly (`last -x` crash marker) and, if so, surfaces a standard evidence bundle (`journalctl -b -1 -k` tail, `pm_trace` hash-match, boot timestamps) unprompted; silent otherwise | 🤖 Agent, proactively, chained off `/handover`'s read-mode |
+| 🔒 `/security-privacy-check` | Runs a Lynis hardening audit (via `pkexec`, report-only) plus GNOME privacy settings, location services, and Flatpak per-app permission overrides; saves each run to `.claude/security-reports/` (gitignored) | 🤖 Agent, freely — read-only, never installs or changes a setting |
 
 The dividing line isn't privilege, same as the guardrails themselves: it's
 whether a step is read-only/reversible-by-git (agent runs it unasked) or a

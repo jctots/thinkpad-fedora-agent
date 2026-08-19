@@ -36,6 +36,7 @@ packages=(
   "v4l-utils|UVC camera diagnostics/controls (v4l2-ctl, qv4l2) — generic tool for any video-capture device, no host-specific quirk involved"
   "nodejs|node/npm/npx — general JS tooling dependency (MCP servers, CLIs), also needed by the ccusage-indicator GNOME extension"
   "kopia|/var/home reversibility layer — bootstrap.md §3.8, recovery.md Card 3. Needs unsandboxed filesystem access to snapshot the home tree, so layered rather than the Flatpak (io.kopia.KopiaUI) or a toolbox"
+  "lynis|security audit tool for scripts/security-privacy-check.sh — needs root and host-level access (kernel, boot, SELinux state) to be meaningful, so layered rather than run from a toolbox"
 )
 
 missing=()
