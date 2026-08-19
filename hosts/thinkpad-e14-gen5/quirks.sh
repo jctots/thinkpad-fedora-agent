@@ -296,24 +296,45 @@ fi
 
 echo
 
-# --- s2idle resume-hang investigation: pm_debug_messages + fast journald sync ---
+# --- s2idle resume-hang investigation: debug scaffolding ---
 # Open bug, not a fix: lid-close suspend sometimes never resumes (hard
-# power-cycle required). pm_debug_messages resets every boot by design (it's
-# a /sys/power node, not persisted), so a systemd unit re-arms it at boot
-# instead of relying on it being set by hand. journald's default
-# SyncIntervalSec (5min) batches writes, so kernel debug output from a hang
-# sits unflushed in the page cache and is lost on a hard power-cycle; the
-# journald.conf.d drop-in forces 1s syncs to trade disk I/O for actually
-# capturing the hang. TEMPORARY — remove both once the hang is diagnosed
-# once (see thinkpad-fedora-agent memory "s2idle resume-hang investigation").
+# power-cycle required). Four independent diagnostics, all TEMPORARY —
+# remove once the hang is actually diagnosed (see thinkpad-fedora-agent
+# memory "s2idle resume-hang investigation"):
+#   - pm_debug_messages: verbose per-device suspend/resume timing. Resets
+#     every boot (/sys/power node, not persisted); pm-debug-messages.service
+#     re-arms it at boot.
+#   - journald 1s fsync: default SyncIntervalSec (5min) batches writes, so
+#     debug output from a hang sits unflushed and is lost on a hard
+#     power-cycle. 99-pm-debug-sync.conf forces 1s syncs.
+#   - pm_trace: stamps a magic code into RTC hardware right before each
+#     device's suspend/resume callback — survives even a hard power-off
+#     (unlike the above, doesn't depend on journald at all). Next boot's
+#     dmesg identifies the exact device that was mid-suspend when it froze.
+#     Resets every boot like pm_debug_messages; pm-trace.service re-arms it.
+#     Side effect: RTC gets a bogus value after a traced hang, so system
+#     clock reads wrong until NTP resyncs — cosmetic, self-corrects.
+#   - sysrq bitmask + no_console_suspend: raises kernel.sysrq to 1 (adds
+#     SysRq+W dump-blocked-tasks, SysRq+L backtrace-all-CPUs, usable by hand
+#     at the moment it looks hung, before reaching for the power button) and
+#     keeps the kernel console live through suspend instead of going silent
+#     (no_console_suspend kernel arg) so messages may print to the physical
+#     screen at the moment of freeze.
 #
-# To remove once the bug is caught (reversible — both are /etc changes
-# under etckeeper, `pkexec etckeeper vcs log -- <path>` shows the history):
-#   pkexec systemctl disable --now pm-debug-messages.service
+# To remove once the bug is caught (reversible — /etc changes are under
+# etckeeper, `pkexec etckeeper vcs log -- <path>` shows the history; the
+# kernel arg is an OS-image layer, reversible via `rpm-ostree kargs` or
+# rollback):
+#   pkexec systemctl disable --now pm-debug-messages.service pm-trace.service
 #   pkexec rm /etc/systemd/system/pm-debug-messages.service
+#   pkexec rm /etc/systemd/system/pm-trace.service
+#   pkexec rm /etc/systemd/system/sysinit.target.wants/pm-trace.service
 #   pkexec rm /etc/systemd/journald.conf.d/99-pm-debug-sync.conf
+#   pkexec rm /etc/sysctl.d/99-sysrq-debug.conf
+#   rpm-ostree kargs --delete=no_console_suspend
 #   pkexec systemctl daemon-reload
 #   pkexec systemctl restart systemd-journald
+#   pkexec sysctl --system
 #   pkexec etckeeper commit "Remove s2idle debug scaffolding, bug diagnosed (see incidents/I0NN)"
 #   # then delete this whole block from quirks.sh in the same commit
 
@@ -337,6 +358,34 @@ if [ -f /etc/systemd/journald.conf.d/99-pm-debug-sync.conf ]; then
   echo "ok      journald fast-sync drop-in present (99-pm-debug-sync.conf)"
 else
   echo "missing journald fast-sync drop-in (99-pm-debug-sync.conf)"
+  s2idle_debug_missing=1
+fi
+
+if [ "$(cat /sys/power/pm_trace 2>/dev/null)" = "1" ]; then
+  echo "ok      pm_trace armed for this boot (RTC-based device tracing, survives hard power-off)"
+else
+  echo "missing pm_trace not armed this boot"
+  s2idle_debug_missing=1
+fi
+
+if systemctl is-enabled pm-trace.service >/dev/null 2>&1; then
+  echo "ok      pm-trace.service enabled (re-arms on every boot)"
+else
+  echo "missing pm-trace.service not enabled"
+  s2idle_debug_missing=1
+fi
+
+if [ "$(cat /proc/sys/kernel/sysrq 2>/dev/null)" = "1" ]; then
+  echo "ok      sysrq bitmask raised (SysRq+W / SysRq+L available)"
+else
+  echo "missing sysrq bitmask not raised (99-sysrq-debug.conf missing or overridden)"
+  s2idle_debug_missing=1
+fi
+
+if grep -q 'no_console_suspend' /proc/cmdline 2>/dev/null; then
+  echo "ok      no_console_suspend kernel arg active this boot"
+else
+  echo "missing no_console_suspend not active this boot (check 'rpm-ostree kargs', may need a reboot to apply)"
   s2idle_debug_missing=1
 fi
 
