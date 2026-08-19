@@ -186,7 +186,7 @@ The common case, and the one to reach for. Mounting is friendlier than
 accident.
 
 ```bash
-kopia snapshot list /var/home/jc          # find the snapshot you want
+kopia snapshot list "$HOME"               # find the snapshot you want
 mkdir -p /tmp/snap && kopia mount <snapshot-id> /tmp/snap
 cp /tmp/snap/path/to/file ~/path/to/file
 umount /tmp/snap
@@ -197,7 +197,7 @@ umount /tmp/snap
 Onto a fresh install, before you log into anything else that will write there.
 
 ```bash
-kopia restore <snapshot-id> /var/home/jc
+kopia restore <snapshot-id> /var/home/jcdedios
 ```
 
 Then check `~/.ssh` permissions before using the keys — a restore that
