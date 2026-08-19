@@ -306,6 +306,16 @@ echo
 # journald.conf.d drop-in forces 1s syncs to trade disk I/O for actually
 # capturing the hang. TEMPORARY — remove both once the hang is diagnosed
 # once (see thinkpad-fedora-agent memory "s2idle resume-hang investigation").
+#
+# To remove once the bug is caught (reversible — both are /etc changes
+# under etckeeper, `pkexec etckeeper vcs log -- <path>` shows the history):
+#   pkexec systemctl disable --now pm-debug-messages.service
+#   pkexec rm /etc/systemd/system/pm-debug-messages.service
+#   pkexec rm /etc/systemd/journald.conf.d/99-pm-debug-sync.conf
+#   pkexec systemctl daemon-reload
+#   pkexec systemctl restart systemd-journald
+#   pkexec etckeeper commit "Remove s2idle debug scaffolding, bug diagnosed (see incidents/I0NN)"
+#   # then delete this whole block from quirks.sh in the same commit
 
 s2idle_debug_missing=0
 
