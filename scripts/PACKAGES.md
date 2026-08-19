@@ -19,6 +19,7 @@ Update both in the same commit as the install that satisfies an entry.
 | `gitleaks` | 2026-08-16 (§3.8) | `.githooks/pre-commit` refuses to run without it — this repo is public, so the secret scan is a hard requirement, not a nicety |
 | `make` | 2026-08-16 (§3.8) | This repo's documented interface (`make probe`, `make check`, `make hooks`). §3.7 had to work around its absence with the `bash test/probe --suite` fallback |
 | `tailscale` | 2026-08-16 (§3.4b) | Home-lab reachability off the LAN. Three later things need it: the vault's RAG backend (Ollama/Qdrant), the `/var/home` kopia backup target, and `docs/recovery.md` Card 3. Staged, pending reboot as of this entry |
+| `kopia` | 2026-08-18 (§3.8) | The `/var/home` reversibility layer itself — `docs/recovery.md` Card 3. Layered rather than Flatpak/toolbox because the backup needs unsandboxed access to walk the whole home tree on a schedule. Shares the same kopia repository that `3etn-net-iac`'s VMs already back up to (host/path in `local/secrets.env`) — see `scripts/kopia-backup.sh` and `scripts/backup-status.sh`. Not in Fedora's repos — needs its own RPM repo (`packages.kopia.io`) added under `/etc/yum.repos.d/` first, same category as the fingerprint COPR in `hosts/thinkpad-e14-gen5/quirks.sh`; `scripts/layer-packages.sh` checks for and prints that step |
 
 ## Flatpaks
 

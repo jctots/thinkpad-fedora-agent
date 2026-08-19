@@ -13,6 +13,19 @@
 
 set -euo pipefail
 
+# kopia isn't in Fedora's repos — it ships its own RPM repo (packages.kopia.io),
+# same category as the fingerprint COPR in hosts/thinkpad-e14-gen5/quirks.sh.
+# Checked here rather than silently left to the generic "not found" rpm-ostree
+# error (see incidents/ for the one that motivated this).
+KOPIA_REPO_FILE="/etc/yum.repos.d/kopia.repo"
+kopia_repo_missing=0
+if [ -f "$KOPIA_REPO_FILE" ]; then
+  echo "ok      kopia repo file present ($KOPIA_REPO_FILE)"
+else
+  echo "missing kopia repo file ($KOPIA_REPO_FILE) — rpm-ostree install kopia fails without it"
+  kopia_repo_missing=1
+fi
+
 # name|reason
 packages=(
   "git-core|source control — bootstrap.md §3.2, base image dependency"
@@ -22,6 +35,7 @@ packages=(
   "tailscale|home-lab reachability off the LAN — bootstrap.md §3.4b, needed for the vault's RAG backend, the kopia NAS backup, and recovery.md Card 3"
   "v4l-utils|UVC camera diagnostics/controls (v4l2-ctl, qv4l2) — generic tool for any video-capture device, no host-specific quirk involved"
   "nodejs|node/npm/npx — general JS tooling dependency (MCP servers, CLIs), also needed by the ccusage-indicator GNOME extension"
+  "kopia|/var/home reversibility layer — bootstrap.md §3.8, recovery.md Card 3. Needs unsandboxed filesystem access to snapshot the home tree, so layered rather than the Flatpak (io.kopia.KopiaUI) or a toolbox"
 )
 
 missing=()
@@ -36,9 +50,21 @@ for entry in "${packages[@]}"; do
   fi
 done
 
-if [ "${#missing[@]}" -gt 0 ]; then
+if [ "${#missing[@]}" -gt 0 ] || [ "$kopia_repo_missing" -eq 1 ]; then
   echo
   echo "Run (as separate, reviewable commands — do not chain):"
+  if [ "$kopia_repo_missing" -eq 1 ]; then
+    echo "  sudo rpm --import https://kopia.io/signing-key"
+    echo "  cat <<'EOF' | sudo tee $KOPIA_REPO_FILE"
+    echo "  [Kopia]"
+    echo "  name=Kopia"
+    echo "  baseurl=https://packages.kopia.io/rpm/stable/\$basearch/"
+    echo "  gpgcheck=1"
+    echo "  enabled=1"
+    echo "  gpgkey=https://kopia.io/signing-key"
+    echo "  EOF"
+    echo "  # then confirm etckeeper committed it — /etc is only reversible if it did"
+  fi
   for name in "${missing[@]}"; do
     echo "  rpm-ostree install $name"
   done

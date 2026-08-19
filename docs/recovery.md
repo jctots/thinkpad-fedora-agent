@@ -110,10 +110,11 @@ working tree *is* the record and `git -C /etc checkout -- <file>` undoes it.
 Nothing else covers your home directory. This layer is exactly as good as the
 last time the backup ran.
 
-> **Design written, not yet built.** kopia to the home-lab NAS, over Tailscale.
-> The commands below are the intended shape and have not been run — kopia is not
-> installed and the repository does not exist. Correct every one of them the day
-> the backup is stood up. Until then, **treat `/var/home` as unprotected.**
+> **Verified end-to-end** (2026-08-19, see `incidents/`). kopia to the
+> home-lab NAS, over Tailscale — same shared repository the `3etn-net-iac`
+> VMs use (host/path/user in `local/secrets.env`, never inlined here).
+> First snapshot: 14 GB, 24,272 files, 18m24s. Restore test (mount + copy
+> one file out, diff against the live copy) passed.
 
 ### Check freshness before you trust it
 
@@ -123,7 +124,7 @@ early changes what you do next.
 
 ```bash
 scripts/backup-status.sh          # age of the last successful snapshot
-kopia snapshot list /var/home/jc  # the same thing, the long way
+kopia snapshot list "$HOME"       # the same thing, the long way
 ```
 
 ### The chain on a reinstalled machine
@@ -137,15 +138,45 @@ five steps, and it is why this card exists rather than a one-line command.
 3. **kopia installed** — layered with `rpm-ostree`, which means a reboot.
 4. **The repository password**, from Bitwarden, reachable from your phone
    alone. Same bar as the LUKS passphrase; see `bootstrap.md` §1.2.
-5. **Connect** to the repository.
+5. **Connect** to the repository, then install the daily timer.
 
 ```bash
-# 3 — install (reboot required on Silverblue)
+# 3 — install (kopia isn't in Fedora's repos — add its own RPM repo first,
+# same category as the fingerprint COPR in hosts/thinkpad-e14-gen5/quirks.sh;
+# scripts/layer-packages.sh prints these same commands if the repo is missing)
+sudo rpm --import https://kopia.io/signing-key
+cat <<'EOF' | sudo tee /etc/yum.repos.d/kopia.repo
+[Kopia]
+name=Kopia
+baseurl=https://packages.kopia.io/rpm/stable/$basearch/
+gpgcheck=1
+enabled=1
+gpgkey=https://kopia.io/signing-key
+EOF
+scripts/etc-drift.sh          # confirm etckeeper committed the new repo file
 sudo rpm-ostree install kopia && systemctl reboot
 
-# 5 — connect (transport and path come from local/, never inlined here)
-kopia repository connect sftp --host <nas> --path <repo-path> --username <user>
+# 5 — connect (host/path/user/password come from local/secrets.env, never
+# inlined here — see that file's kopia section; KOPIA_REPO_PASSWORD doubles
+# as both the SFTP login password and the repo encryption password, same
+# convention 3etn-net-iac's VMs use)
+#
+# --known-hosts must point at a FILE that survives reboot, not /tmp — kopia
+# rejects a partial known_hosts (e.g. only the ed25519 line) with "key
+# mismatch" if it negotiates a different host-key algorithm, so capture all
+# of them:
+#   ssh-keyscan -p 22 "$KOPIA_SFTP_HOST" > ~/.config/kopia/known_hosts
+. local/secrets.env
+kopia repository connect sftp \
+  --host "$KOPIA_SFTP_HOST" --path "$KOPIA_SFTP_PATH" \
+  --username "$KOPIA_SFTP_USER" \
+  --sftp-password "$KOPIA_REPO_PASSWORD" --password "$KOPIA_REPO_PASSWORD" \
+  --known-hosts ~/.config/kopia/known_hosts
 kopia repository status          # confirm before trusting anything below
+
+# schedule the daily snapshot (persistent — catches up if the laptop was
+# asleep or offline at the scheduled time)
+scripts/install-kopia-backup.sh
 ```
 
 ### Restore one file
