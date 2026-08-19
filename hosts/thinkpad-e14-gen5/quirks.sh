@@ -493,6 +493,47 @@ if [ "$s2idle_escalation_missing" -eq 1 ]; then
   echo "  pkexec etckeeper commit 'Arm s2idle debug escalation over crash-forensics baseline'"
 fi
 
+# --- fprintd Goodix driver crash-loop mitigation (TEMPORARY, incidents/I015) ---
+# fprintd crashes inside libfprint-tod-goodix-550a-0.0.9.so (libusb bulk
+# transfer), no fix available upstream (copr repo metadata frozen since
+# 2026-03-19). Being D-Bus-activated with no restart policy, a crash left
+# it dead until next login. Mitigation restores auto-restart + verbose
+# logging while the root cause (possibly a loose charger cable that was
+# separately found and fixed the same day — unconfirmed as the trigger)
+# is still being watched. Restart=on-failure is a fine permanent default
+# either way; only the verbose logging line is worth dropping once there
+# has been a clean run with no further crashes.
+#
+# To remove once confirmed resolved (or the driver gets an upstream fix):
+#   pkexec rm /etc/systemd/system/fprintd.service.d/override.conf
+#   pkexec systemctl daemon-reload
+#   pkexec etckeeper commit "Remove fprintd crash-loop mitigation, see incidents/I015"
+#   # then delete this block from quirks.sh
+
+fprintd_mitigation_missing=0
+
+if [ -f /etc/systemd/system/fprintd.service.d/override.conf ]; then
+  echo "ok      fprintd.service override present (Restart=on-failure + verbose logging, incidents/I015)"
+else
+  echo "missing fprintd.service override (incidents/I015 mitigation not applied)"
+  fprintd_mitigation_missing=1
+fi
+
+if [ "$fprintd_mitigation_missing" -eq 1 ]; then
+  overall_missing=1
+  echo
+  echo "Run (as separate, reviewable commands — do not chain):"
+  echo "  pkexec mkdir -p /etc/systemd/system/fprintd.service.d"
+  echo "  cat <<'EOF' | pkexec tee /etc/systemd/system/fprintd.service.d/override.conf"
+  echo "  [Service]"
+  echo "  Restart=on-failure"
+  echo "  RestartSec=2"
+  echo "  Environment=G_MESSAGES_DEBUG=all"
+  echo "  EOF"
+  echo "  pkexec systemctl daemon-reload"
+  echo "  pkexec etckeeper commit 'Auto-restart fprintd on crash + verbose logging (incidents/I015)'"
+fi
+
 if [ "$overall_missing" -eq 1 ]; then
   exit 1
 fi

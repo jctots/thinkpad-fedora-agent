@@ -28,6 +28,7 @@ times the agent could not help is measuring the arrangement on its best days.
 
 | # | Date | Area | Symptom | Time to fix | 1st proposal right? | Captured in |
 |---|---|---|---|---|---|---|
+| [I015](I015-fprintd-goodix-driver-crash-loop.md) | 2026-08-19 | hardware | fprintd crashing ~15x/3 days inside the Goodix driver, no restart policy so it stayed dead; separately, a loose charger cable was cycling charge/discharge and causing the connect/disconnect sound + LED blink the user reported alongside it | ~30m | ✓ | `hosts/thinkpad-e14-gen5/quirks.sh` (pending) |
 | [I014](I014-kopia-backup-missing-cache-container-steam-exclusions.md) | 2026-08-19 | backup | `kopia-backup.sh`'s exclusion list only covered the rclone cloud mounts — first real run walked 33GB of Steam data under `.var` before the user flagged the slowness | ~15m | ✗ | `scripts/kopia-backup.sh` |
 | [I013](I013-kopia-sftp-connect-auth-and-known-hosts.md) | 2026-08-19 | backup | `kopia repository connect sftp` per `docs/recovery.md`'s prior (unexercised) command failed missing auth flags, then `knownhosts: key mismatch` even with the correct single key — needed all host-key algorithms in a persistent `known_hosts` file | ~25m | ✗ | `docs/recovery.md` Card 3 |
 | [I012](I012-notify-send-plain-sudo-fingerprint-gate.md) | 2026-08-17 | agent | No live cue to touch the fingerprint reader (Bash tool output isn't streamed); `notify-send` + plain `sudo` blocks correctly on fingerprint with no TTY workaround, `pkexec` only needed for the password fallback | ~25m | ✓ | not yet — one-off pattern |
