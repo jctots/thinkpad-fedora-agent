@@ -62,7 +62,19 @@ user):
      and close it with a quote picked via `shuf -n1 scripts/quotes.txt`
      (zero-token random pick; don't generate or web-search a quote
      yourself). Don't recite "there's nothing pending" as a status report.
-3. Either way — present or absent — invoke the `reset-triage` skill next.
+3. Check `local/session-launch-failures.log` (gitignored, may not exist).
+   If it has content, each line is a prior launch attempt that never
+   reached a model turn — `session-autostart.sh` logs these itself (no
+   network, or `claude` exited non-zero) since a script-level failure like
+   that can't be caught by anything running inside a session. Surface each
+   line's timestamp and reason as part of the "Immediately next" report,
+   then truncate the file (`: > local/session-launch-failures.log`) so it
+   isn't re-reported next time. This is a distinct signal from
+   `reset-triage` below: the machine didn't necessarily crash here, the
+   agent just failed to launch — suggest filing it as an incident with
+   tally `n/a — agent unavailable` per CLAUDE.md, rather than treating it
+   as resolved just by reporting it.
+4. Either way — present or absent — invoke the `reset-triage` skill next.
    It checks whether the *previous* boot ended cleanly, independent of
    whether a handover was staged: a crash can happen outside any planned
    reboot. It stays silent when the last boot was clean, so this doesn't
