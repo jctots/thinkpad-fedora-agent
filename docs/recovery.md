@@ -110,11 +110,12 @@ working tree *is* the record and `git -C /etc checkout -- <file>` undoes it.
 Nothing else covers your home directory. This layer is exactly as good as the
 last time the backup ran.
 
-> **Verified end-to-end** (2026-08-19, see `incidents/`). kopia to the
-> home-lab NAS, over Tailscale — same shared repository the `3etn-net-iac`
-> VMs use (host/path/user in `local/secrets.env`, never inlined here).
-> First snapshot: 14 GB, 24,272 files, 18m24s. Restore test (mount + copy
-> one file out, diff against the live copy) passed.
+> **Verified end-to-end** (2026-08-19, see `incidents/`). kopia to a private
+> home-lab NAS, over Tailscale — the same shared repository other private
+> infra on that network already backs up to (host/path/user in
+> `local/secrets.env`, never inlined here). First snapshot: 14 GB, 24,272
+> files, 18m24s. Restore test (mount + copy one file out, diff against the
+> live copy) passed.
 
 ### Check freshness before you trust it
 
@@ -159,7 +160,7 @@ sudo rpm-ostree install kopia && systemctl reboot
 # 5 — connect (host/path/user/password come from local/secrets.env, never
 # inlined here — see that file's kopia section; KOPIA_REPO_PASSWORD doubles
 # as both the SFTP login password and the repo encryption password, same
-# convention 3etn-net-iac's VMs use)
+# convention the rest of that private infra uses)
 #
 # --known-hosts must point at a FILE that survives reboot, not /tmp — kopia
 # rejects a partial known_hosts (e.g. only the ed25519 line) with "key
@@ -197,7 +198,7 @@ umount /tmp/snap
 Onto a fresh install, before you log into anything else that will write there.
 
 ```bash
-kopia restore <snapshot-id> /var/home/jcdedios
+kopia restore <snapshot-id> /var/home/<user>
 ```
 
 Then check `~/.ssh` permissions before using the keys — a restore that

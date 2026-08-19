@@ -21,5 +21,5 @@ install -m 0644 %{SOURCE0} %{buildroot}%{_datadir}/polkit-1/actions/com.bitwarde
 %{_datadir}/polkit-1/actions/com.bitwarden.Bitwarden.policy
 
 %changelog
-* Sun Aug 16 2026 jc <jc@dedios.org> - 1-1
+* Sun Aug 16 2026 maintainer <maintainer@example.com> - 1-1
 - Initial package

@@ -22,7 +22,7 @@ ssh: handshake failed: knownhosts: key mismatch
 
 despite that being the exact key `ssh` itself already trusted and connected with on the same host/port.
 
-**Cause:** Two separate gaps. First, the repo's shared kopia server (`verona`, same one `3etn-net-iac`'s VMs use) authenticates SFTP by password, not key — the recovery.md command never had auth flags at all, because it was written before the connection had actually been exercised. Second, kopia's Go SSH client negotiates a host-key algorithm independently of whatever the system `ssh` client last used, and a `known_hosts` file with only one algorithm's line causes `knownhosts: key mismatch` if kopia's client happens to pick RSA (which was present on the server) instead of ed25519. The single-algorithm file was a false lead — it looked complete because `ssh-keygen -F` and a plain `ssh` connection both used ed25519 successfully against the same host.
+**Cause:** Two separate gaps. First, the repo's shared kopia server (a private home-lab host, same one other private infra there uses) authenticates SFTP by password, not key — the recovery.md command never had auth flags at all, because it was written before the connection had actually been exercised. Second, kopia's Go SSH client negotiates a host-key algorithm independently of whatever the system `ssh` client last used, and a `known_hosts` file with only one algorithm's line causes `knownhosts: key mismatch` if kopia's client happens to pick RSA (which was present on the server) instead of ed25519. The single-algorithm file was a false lead — it looked complete because `ssh-keygen -F` and a plain `ssh` connection both used ed25519 successfully against the same host.
 
 **Fix:**
 ```bash
@@ -34,7 +34,7 @@ kopia repository connect sftp \
   --sftp-password "$KOPIA_REPO_PASSWORD" --password "$KOPIA_REPO_PASSWORD" \
   --known-hosts ~/.config/kopia/known_hosts
 ```
-`KOPIA_REPO_PASSWORD` doubles as both the SFTP login password and the kopia repository encryption password — confirmed against `3etn-net-iac/shared/kopia/kopia_repo_config.md`, which documents the same convention. `--known-hosts` must point at a path that survives reboot (`~/.config/kopia/known_hosts`), not `/tmp` — the repository config stores that path literally and re-reads it on every connect.
+`KOPIA_REPO_PASSWORD` doubles as both the SFTP login password and the kopia repository encryption password — confirmed against that private infra's own kopia docs, which document the same convention. `--known-hosts` must point at a path that survives reboot (`~/.config/kopia/known_hosts`), not `/tmp` — the repository config stores that path literally and re-reads it on every connect.
 
 **Tried first:** Ran the recovery.md command as documented (no auth flags at all) — failed immediately, expected once the missing-flag error appeared. Then tried `--known-hosts /tmp/kopia_known_hosts` containing just the single matching `ssh-ed25519` line, reasoning that since `ssh-keygen -F` and a direct `ssh` test both confirmed that exact key was already trusted, one line should be sufficient — this looked right and still failed with `key mismatch`, which was the confusing part. Also separately tried `~/.ssh/known_hosts` unfiltered, which has a mix of bracketed `[host]:2022` and plain `host` entries from other tools' historical connections at different ports — still mismatched, because it lacked a plain-hostname ecdsa line. The fix that worked was `ssh-keyscan` capturing all three algorithms (ed25519, rsa, ecdsa) as plain `host key` lines into one dedicated file.
 

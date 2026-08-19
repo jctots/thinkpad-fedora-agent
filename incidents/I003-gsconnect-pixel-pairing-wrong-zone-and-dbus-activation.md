@@ -52,7 +52,7 @@ commit `cb88e65`). The GSConnect extension itself lives under
 `~/.local/share/gnome-shell/extensions/` and `~/.config/gsconnect/` —
 `/var/home` layer, covered by backups. No OS-image layer involved.
 
-**Captured in:** `/var/home/jcdedios/code/thinkpad-fedora-extras/gnome-extensions.sh`
+**Captured in:** `/var/home/<user>/code/thinkpad-fedora-extras/gnome-extensions.sh`
 (new entry for `gsconnect@andyholmes.github.io`) — the firewalld zone
 lookup itself is not yet automated into any script; a future version of
 that manifest could check `firewall-cmd --get-active-zones` instead of
