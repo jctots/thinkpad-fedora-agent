@@ -33,7 +33,9 @@ Two independent halves:
    entries (`root`, `wheel`, the user), the rest resolve via `altfiles`/
    `systemd` NSS sources per `nsswitch.conf` (`getent group` shows the full
    merged set); `grpck` only reads the flat files directly and doesn't know
-   about the merge. Confirmed 2026-08-19 — no fix needed.
+   about the merge. Confirmed 2026-08-19 — no fix needed. Same root cause,
+   same "no fix needed": **AUTH-9228 / `pwck`** — `/etc/passwd` similarly
+   only holds local entries, everything else resolves via `altfiles`.
 2. **Native privacy checks** — GNOME privacy settings (`gsettings`),
    location services, and Flatpak permission overrides (system-wide and
    per-app). These aren't vendored from anywhere; they're the same
@@ -86,8 +88,16 @@ commit `5dc4784` in `/etc`) before treating any of them as new:
   diff will never show this change even though it's real and applied.
 - **KRNL-5820** core dumps — fixed via `* hard core 0` in
   `/etc/security/limits.conf`.
-- **NETW-3200** unused protocols — fixed via
-  `/etc/modprobe.d/blacklist-unused-protocols.conf` (dccp/sctp/rds/tipc).
+- **NETW-3200** unused protocols — `/etc/modprobe.d/blacklist-unused-protocols.conf`
+  (dccp/sctp/rds/tipc) was added as reasonable defensive config, but **this
+  suggestion will never clear**: confirmed 2026-08-19 that Lynis's NETW-3200
+  test unconditionally suggests reviewing these four protocols regardless of
+  whether they're blacklisted or even loaded — it's not a live-state check.
+  Don't re-attempt a fix here; a persistent "suggestion" for these four is
+  expected forever. Also confirmed the hard way: explicit `modprobe <name>`
+  bypasses a blacklist entirely (blacklist only blocks *automatic*
+  alias-triggered loading) — don't run `modprobe` on these to "test" the
+  blacklist, it will actually load the module into the live kernel.
 - **KRNL-6000** sysctl deltas — fixed via `/etc/sysctl.d/99-hardening.conf`,
   except three deliberately left alone (see below).
 - **Deliberately left alone, do not propose changing without asking first**:
@@ -99,3 +109,24 @@ commit `5dc4784` in `/etc`) before treating any of them as new:
   user-confirmed: `gdb -p <pid>` on an unrelated running process now needs
   sudo/pkexec. If a debugging workflow breaks and this setting is the
   reason, that's expected, not a regression to silently revert.
+- **AUTH-9228** `pwck` — confirmed same NSS-altfiles false positive as
+  AUTH-9216, see above. No fix needed.
+- **PKGS-7420** auto-upgrade tool — fixed for real this time: enabled
+  `rpm-ostreed-automatic.timer` (was disabled). The earlier "already
+  covered by rpm-ostree" reasoning in the first pass was wrong — the timer
+  existing in the unit tree doesn't mean it's *enabled*; always check
+  `systemctl is-enabled` before treating an ostree-native equivalent as
+  already covering a Lynis suggestion.
+- **AUTH-9230/9286×2/9328** (`/etc/login.defs`) — fixed: `UMASK 027`,
+  `PASS_MIN_DAYS 1`, `PASS_MAX_DAYS 365`, `SHA_CRYPT_MIN_ROUNDS 10000`,
+  `SHA_CRYPT_MAX_ROUNDS 65536`. Moderate values chosen deliberately —
+  single-user laptop, not chasing aggressive rotation cadence.
+
+**Result of the full triage, both passes**: hardening index 66 → 72 → 75.
+This is treated as near the realistic ceiling for this machine — remaining
+suggestions are either structurally capped (above) or would require
+adopting server-oriented controls (AIDE/rkhunter, external syslog, login
+banners, mod_evasive on a `httpd` that's only a disabled dependency of
+`gnome-user-share`) that don't fit a single-user laptop's actual threat
+model. Chasing 100 here would mean optimizing the number over the actual
+security posture — don't propose those just to move the score.
