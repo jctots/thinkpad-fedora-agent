@@ -90,11 +90,39 @@ of waiting to be asked.
 | 🗄️ `/etc-drift` | Checks `etckeeper` actually committed the last `/etc` change | 🤖 Agent for the check; 🧑 human approves the shown `etckeeper commit` if one's needed |
 | 🧳 `/handover` | Snapshots session state to `.claude/handover.md` before a reboot-triggering action, and reads it back in on the next session | 🤖 Agent, proactively — already standing practice, this just formalizes it |
 | ⬆️ `/update-check` | Reports OS image staleness (`rpm-ostree upgrade --check`) and drift across both flatpak manifests (public + private extras) — current/outdated/missing, never runs the upgrade itself | 🤖 Agent for the check; 🧑 human approves the shown `rpm-ostree upgrade` or `flatpak update` if one's needed |
+| 🩹 `/reset-triage` | On every session start, checks whether the previous boot ended uncleanly (`last -x` crash marker) and, if so, surfaces a standard evidence bundle (`journalctl -b -1 -k` tail, `pm_trace` hash-match, boot timestamps) unprompted; silent otherwise | 🤖 Agent, proactively, chained off `/handover`'s read-mode |
 
 The dividing line isn't privilege, same as the guardrails themselves: it's
 whether a step is read-only/reversible-by-git (agent runs it unasked) or a
 real system mutation (shown as a command, human approves), per CLAUDE.md's
 working rules.
+
+### Crash/hang forensics
+
+Recurring lockups, panics, and hard resets are handled as a standing
+capability, not reinvented per-bug (see decision D33 in the project vault).
+Three layers, sorted by actual idle cost rather than by which investigation
+introduced them:
+
+- **Baseline sensors** — `pm_trace` (pstore), the sysrq bitmask, and
+  `pm_debug_messages` stay armed permanently; each costs effectively
+  nothing at idle, and unlike a reactive check, they've already captured
+  evidence by the time anyone knows a crash happened. The journald sync
+  interval joins this layer too, tuned to a loose, host-profile-tunable
+  default rather than the aggressive value an active investigation might
+  need.
+- **`/reset-triage`** — reactive and generic: detects an unclean prior boot
+  on session start and reports a standard evidence bundle, regardless of
+  which subsystem broke.
+- **Case-specific escalation** — heavier, bug-specific instrumentation
+  (targeted kernel args, a tightened sync interval) stays scoped to one
+  open incident, armed deliberately and reverted when it's fixed — this is
+  where the current s2idle resume-hang scaffolding in
+  `hosts/thinkpad-e14-gen5/quirks.sh` lives.
+
+Pinned to `hosts/thinkpad-e14-gen5/` for now; promotion to the generic
+`scripts/` layer waits for a second host to validate the sensor set
+against.
 
 ## ❓ FAQ
 

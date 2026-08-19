@@ -62,6 +62,11 @@ user):
      and close it with a quote picked via `shuf -n1 scripts/quotes.txt`
      (zero-token random pick; don't generate or web-search a quote
      yourself). Don't recite "there's nothing pending" as a status report.
+3. Either way — present or absent — invoke the `reset-triage` skill next.
+   It checks whether the *previous* boot ended cleanly, independent of
+   whether a handover was staged: a crash can happen outside any planned
+   reboot. It stays silent when the last boot was clean, so this doesn't
+   add noise to the plain-greeting path.
 
 ## Why the trigger is unconditional
 
