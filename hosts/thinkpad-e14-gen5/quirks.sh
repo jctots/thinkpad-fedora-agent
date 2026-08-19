@@ -294,6 +294,54 @@ if [ "$xpadneo_kmod_missing" -eq 1 ]; then
   echo "firmware via the Xbox Accessories app (Windows/Xbox console/Android)."
 fi
 
+echo
+
+# --- s2idle resume-hang investigation: pm_debug_messages + fast journald sync ---
+# Open bug, not a fix: lid-close suspend sometimes never resumes (hard
+# power-cycle required). pm_debug_messages resets every boot by design (it's
+# a /sys/power node, not persisted), so a systemd unit re-arms it at boot
+# instead of relying on it being set by hand. journald's default
+# SyncIntervalSec (5min) batches writes, so kernel debug output from a hang
+# sits unflushed in the page cache and is lost on a hard power-cycle; the
+# journald.conf.d drop-in forces 1s syncs to trade disk I/O for actually
+# capturing the hang. TEMPORARY — remove both once the hang is diagnosed
+# once (see thinkpad-fedora-agent memory "s2idle resume-hang investigation").
+
+s2idle_debug_missing=0
+
+if [ "$(cat /sys/power/pm_debug_messages 2>/dev/null)" = "1" ]; then
+  echo "ok      pm_debug_messages armed for this boot"
+else
+  echo "missing pm_debug_messages not armed this boot"
+  s2idle_debug_missing=1
+fi
+
+if systemctl is-enabled pm-debug-messages.service >/dev/null 2>&1; then
+  echo "ok      pm-debug-messages.service enabled (re-arms on every boot)"
+else
+  echo "missing pm-debug-messages.service not enabled"
+  s2idle_debug_missing=1
+fi
+
+if [ -f /etc/systemd/journald.conf.d/99-pm-debug-sync.conf ]; then
+  echo "ok      journald fast-sync drop-in present (99-pm-debug-sync.conf)"
+else
+  echo "missing journald fast-sync drop-in (99-pm-debug-sync.conf)"
+  s2idle_debug_missing=1
+fi
+
+if [ "$s2idle_debug_missing" -eq 1 ]; then
+  overall_missing=1
+  echo
+  echo "Run:"
+  echo "  pkexec cp <unit> /etc/systemd/system/pm-debug-messages.service"
+  echo "  pkexec mkdir -p /etc/systemd/journald.conf.d"
+  echo "  pkexec cp <conf> /etc/systemd/journald.conf.d/99-pm-debug-sync.conf"
+  echo "  pkexec systemctl daemon-reload"
+  echo "  pkexec systemctl enable --now pm-debug-messages.service"
+  echo "  pkexec systemctl restart systemd-journald"
+fi
+
 if [ "$overall_missing" -eq 1 ]; then
   exit 1
 fi
