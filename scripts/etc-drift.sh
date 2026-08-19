@@ -4,8 +4,9 @@
 # git history is the only thing that makes docs/recovery.md Card 2 possible.
 #
 # Report-only: never runs `etckeeper commit` itself, only prints the exact
-# command if something is uncommitted. Needs sudo to read /etc's git state —
-# that's the ask-tier prompt working as intended, not a bug in this script.
+# command if something is uncommitted. Needs root to read /etc's git state,
+# via pkexec (not sudo — this script has no TTY to prompt against when run
+# non-interactively, and pkexec is CLAUDE.md's rule for root commands anyway).
 #
 # Idempotent: safe to re-run any time.
 #
@@ -13,36 +14,40 @@
 
 set -euo pipefail
 
-# Authenticate sudo up front, with stderr visible, so a TTY-less/auth
-# failure here is reported as what it is instead of being swallowed by a
-# later `git rev-parse` check and misread as "not a git repository".
-if ! sudo -v; then
-    echo "error   sudo authentication failed — run this in a real terminal" >&2
-    echo "        (fingerprint/password prompts need a real TTY; this" >&2
-    echo "        script cannot tell a failed sudo apart from a genuinely" >&2
-    echo "        missing /etc git repo if this check is skipped)" >&2
+out="$(pkexec bash -c '
+if ! git -C /etc rev-parse --git-dir >/dev/null 2>&1; then
+    echo "MISSING_REPO"
+    exit 0
+fi
+echo "COMMIT $(git -C /etc log -1 --format="%h %ci %s")"
+git -C /etc status --porcelain
+')"
+
+if [ -z "$out" ]; then
+    echo "error   pkexec authentication failed or was cancelled" >&2
     exit 2
 fi
 
-if ! sudo git -C /etc rev-parse --git-dir >/dev/null 2>&1; then
+if [ "$out" = "MISSING_REPO" ]; then
     echo "missing  /etc is not a git repository — etckeeper was never initialised"
     echo
     echo "Run: rpm-ostree install etckeeper && systemctl reboot"
-    echo "Then: sudo etckeeper init && sudo etckeeper commit \"baseline\""
+    echo "Then: pkexec etckeeper init && pkexec etckeeper commit \"baseline\""
     exit 1
 fi
 
-last_commit="$(sudo git -C /etc log -1 --format='%h %ci %s' 2>/dev/null || echo none)"
+last_commit="${out#COMMIT }"
+last_commit="${last_commit%%$'\n'*}"
 echo "last etckeeper commit: $last_commit"
 
-dirty="$(sudo git -C /etc status --porcelain 2>/dev/null || true)"
+dirty="$(printf '%s\n' "$out" | tail -n +2)"
 
 if [ -n "$dirty" ]; then
     echo
     echo "missing  uncommitted changes in /etc:"
     echo "$dirty" | sed 's/^/  /'
     echo
-    echo "Run: sudo etckeeper commit \"describe the change\""
+    echo "Run: pkexec etckeeper commit \"describe the change\""
     exit 1
 fi
 
