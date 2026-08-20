@@ -23,23 +23,41 @@ standalone entry point; don't invoke this before `handover` has run.
 ## Detection
 
 ```
-last -x reboot | head -1
+last -x | awk '
+  /^reboot/ { n++; if (n==2) exit }
+  /crash/ { print; exit }
+'
 ```
 
-`last -x` reads wtmp and explicitly marks a boot session `crash` instead of
-a clean end-time range when no matching "shutdown system down" record
-exists for it — i.e. the machine came back up without ever writing a clean
-shutdown record. This is the signal: look at the **most recent** `reboot`
-line only.
+`last -x` reads wtmp and explicitly marks a **login session line** `crash`
+instead of a clean end-time range when no matching "shutdown system down"
+record exists for it — i.e. the machine came back up without ever writing
+a clean shutdown record. The `reboot` lines themselves do *not* carry this
+tag on this system: a `reboot` entry just perpetually reads `still running`
+once no shutdown record follows it, which is true both for the genuinely
+current boot and for a crashed prior boot that never got a matching
+shutdown record — so filtering on `reboot` lines (an earlier version of
+this skill did) can never see a crash (see `incidents/I018`). The actual
+signal only ever shows up on the tty/login session line.
 
-- Ends with a time range (`- HH:MM (duration)`) → clean. Say nothing about
-  this — no report, matching this project's no-news-is-no-report norm for
-  routine skills. Move on silently.
-- Ends with `- crash` → unclean. Continue to evidence collection below.
+The awk scans from the top of `last -x` (most recent first) and stops at
+the second `reboot` line it sees — i.e. the boundary where the boot-before-
+last starts — printing and exiting immediately if it hits a `crash` line
+before that boundary. This bounds the check to the current boot + the one
+immediately before it, so older unclean boots already further back in
+`last -x` history (triaged in a prior session, or predating this skill)
+don't get re-surfaced.
 
-Only the single most recent boot matters. Older unclean boots already
-further back in `last -x` history were either already triaged in a prior
-session or predate this skill — don't re-surface them.
+- No output → previous boot ended cleanly. Say nothing about this — no
+  report, matching this project's no-news-is-no-report norm for routine
+  skills. Move on silently.
+- A line printed, ending `- crash (duration)` → unclean. Continue to
+  evidence collection below.
+
+Caveat: this assumes roughly one login session per boot (true here — GNOME
+autologin into a single Ptyxis/Claude session). A boot with multiple login
+sessions, or one where the crash happened before any login, can throw off
+the line-counting; treat this as a good-enough heuristic, not a guarantee.
 
 ## Evidence collection (only when `crash` is found)
 
@@ -89,3 +107,12 @@ cheap command, and is what `s2idle` investigation's own hangs already
 showed clearly (confirmed against boot `711aacda` from I-series
 incidents: `last -x` marked it `crash` correctly while the two clean
 reboots either side showed normal time ranges).
+
+The first version of this skill filtered on `last -x reboot`, which
+turned out to never carry the `crash` tag on this system (see the
+Detection section above) — it went undetected until a real crash on
+2026-08-20 was missed on the first "I'm back" check and only found when
+the user reported it manually. Fixed to scan the tty/login session lines
+instead. Lesson: a heuristic "confirmed against" one incident still needs
+re-verifying against the next one — a single past match isn't proof the
+field being filtered on is the right one.

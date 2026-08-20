@@ -206,6 +206,23 @@ if [ "${#simple_nvidia_pkgs[@]}" -gt 0 ]; then
   echo "Run: sudo rpm-ostree install ${simple_nvidia_pkgs[*]}   (reboot required)"
 fi
 
+# NVreg_TemporaryFilePath mitigation for a fatal s2idle suspend hang — driver
+# 610.57.04's kernel-notifier suspend path (NVreg_UseKernelSuspendNotifiers=1)
+# failed to allocate pinned memory to back up VRAM at suspend entry
+# (NVRM: nvCheckOkFailedNoLog ... NV_ERR_NO_MEMORY, _memdescAllocInternal)
+# despite several GB of free RAM — happened 5x across recent boots, fatal
+# (unrecoverable hang) once. Redirecting the VRAM backup to a file sidesteps
+# the allocation path that failed. See incidents/I018 and the
+# "s2idle resume-hang investigation" project memory (still open — this
+# mitigates one failure mode, not a confirmed root-cause fix).
+if [ -f /etc/modprobe.d/nvidia-suspend-fix.conf ] && grep -q "NVreg_TemporaryFilePath" /etc/modprobe.d/nvidia-suspend-fix.conf 2>/dev/null; then
+  echo "ok      NVreg_TemporaryFilePath suspend-OOM mitigation present (see I018)"
+else
+  echo "missing NVreg_TemporaryFilePath suspend-OOM mitigation (see I018) — GPU"
+  echo "        may hard-hang on s2idle suspend under memory fragmentation"
+  nvidia_missing=1
+fi
+
 if [ "$nvidia_missing" -eq 1 ]; then
   overall_missing=1
 fi
