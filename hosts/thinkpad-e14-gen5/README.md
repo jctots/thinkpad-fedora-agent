@@ -142,6 +142,45 @@ are present for the currently running driver version.
 
 Setup steps, MOK enrolment sequence, and current status: `quirks.sh`.
 
+### GPU on/off toggle (I019): s2idle isolation, gaming-only dGPU
+
+s2idle suspend fails **100% of the time** on driver 610.57.04, confirmed as
+an open upstream bug — GSP firmware fails to unload during suspend
+(`NVRM: PM suspend notifier failed: 0x62`), matching
+[NVIDIA/open-gpu-kernel-modules#1142](https://github.com/NVIDIA/open-gpu-kernel-modules/issues/1142)
+exactly. It is independent of local config — I018's suspend-OOM mitigation
+(`NVreg_TemporaryFilePath`) was tried and reverted (see I019); it only
+masked an earlier failure step and let the suspend sequence reach this
+GSP-unload bug instead of avoiding it.
+
+Since the `nvidia` module normally loads at every boot regardless of
+whether the dGPU is actually rendering anything (PRIME offload is opt-in
+per-app), the module being loaded at all is what exposes the suspend path
+to this bug — even a session that never touches the dGPU still hits it.
+`hosts/thinkpad-e14-gen5/gpu-toggle.sh` blacklists/unblacklists the module
+so it can be switched off by default and only switched on for a gaming
+session:
+
+```
+hosts/thinkpad-e14-gen5/gpu-toggle.sh status    # report only
+hosts/thinkpad-e14-gen5/gpu-toggle.sh disable   # blacklist — for s2idle testing / daily use
+hosts/thinkpad-e14-gen5/gpu-toggle.sh enable    # unblacklist — before gaming
+```
+
+Both directions print the exact `pkexec`/`etckeeper`/reboot commands rather
+than running them — same report-only pattern as `quirks.sh`. A reboot is
+required either direction; the module can't be cleanly hot-unloaded while
+GNOME Shell/Xorg/Wayland holds it open. Reversible via `/etc`
+(`etckeeper` commit each direction).
+
+While disabled: `nvidia-smi`/`nvtop` will report no device, Steam's
+`__NV_PRIME_RENDER_OFFLOAD`/`__GLX_VENDOR_LIBRARY_NAME=nvidia` overrides
+become no-ops (same fallback-to-Mesa behavior documented above for
+nouveau), and the machine runs on the Intel iGPU only. `quirks.sh` does
+**not** currently flag the dGPU as "missing" while it's deliberately
+disabled — the toggle's `status` output is the source of truth for current
+intent, `quirks.sh` for whether the driver stack itself is intact.
+
 ## Xbox Wireless Controller (Bluetooth): two stacked bugs, both now fixed
 
 ```

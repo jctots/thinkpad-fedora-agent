@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # Fingerprint reader driver for this host's Goodix 27c6:550a sensor.
-# Report-only, idempotent, same pattern as scripts/layer-packages.sh — this
-# script never installs or overrides anything itself, only prints what's
-# missing and the exact commands to run.
+# `check` (default) is report-only, idempotent, same pattern as
+# scripts/layer-packages.sh — never installs or overrides anything itself,
+# only prints what's missing and the exact commands to run. `fix` additionally
+# executes the two remediation blocks that are pure /etc writes with no
+# rpm-ostree/reboot dependency (crash-forensics baseline, fprintd mitigation)
+# — same trust level as gpu-toggle.sh, safe to run standalone. Everything
+# else (fingerprint reader, NVIDIA, xpadneo, the s2idle kargs escalation)
+# stays print-only: those need rpm-ostree/toolbox builds or a reboot, which
+# CLAUDE.md's reversibility framing treats with more caution than /etc.
 #
 # Why an override, not a plain layer: 27c6:550a has no upstream libfprint
 # support. The working driver is Lenovo's own proprietary TOD blob,
@@ -25,6 +31,83 @@ COPR_REPOID="copr.fedorainfracloud.org:antiderivative:libfprint-tod-goodix-0.0.9
 REPO_FILE="/etc/yum.repos.d/_copr_antiderivative-libfprint-tod-goodix-0.0.9.repo"
 REPO_URL="https://copr.fedorainfracloud.org/coprs/antiderivative/libfprint-tod-goodix-0.0.9/repo/fedora-\$(rpm -E %fedora)/antiderivative-libfprint-tod-goodix-0.0.9-fedora-\$(rpm -E %fedora).repo"
 
+usage() {
+  echo "Usage: $0 {check|fix}"
+  echo
+  echo "  check  (default) report on all quirks for this host"
+  echo "  fix    also apply the crash-forensics baseline and fprintd"
+  echo "         mitigation directly, if missing (pure /etc writes only —"
+  echo "         fingerprint reader, NVIDIA, xpadneo, and the s2idle kargs"
+  echo "         escalation stay print-only, see header comment)"
+  exit 1
+}
+
+fix_forensics_baseline() {
+  echo "applying crash/hang forensics baseline (D33)..."
+  cat <<'EOF' | pkexec tee /etc/systemd/system/pm-debug-messages.service >/dev/null
+[Unit]
+Description=Enable verbose kernel PM (suspend/resume) debug messages
+Documentation=man:systemd-sleep(8)
+DefaultDependencies=no
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash -c 'echo 1 > /sys/power/pm_debug_messages'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
+EOF
+  pkexec mkdir -p /etc/systemd/journald.conf.d
+  cat <<'EOF' | pkexec tee /etc/systemd/journald.conf.d/10-crash-baseline-sync.conf >/dev/null
+[Journal]
+# Baseline for crash/hang forensics (thinkpad-fedora-agent decision D33).
+# Permanent, generic, host-pinned — not tied to any single open
+# investigation. Default SyncIntervalSec (5min) batches writes, so the
+# last seconds before a hard power-cycle can be lost from the page cache.
+# 15s is loose enough to avoid meaningful fsync/write-amplification cost
+# at idle, while still comfortably covering a hard-crash log-loss window.
+# A live investigation may layer a tighter override on top via a
+# higher-sorting conf.d file (see 99-pm-debug-sync.conf) — remove only
+# that override when the investigation closes; this baseline stays.
+SyncIntervalSec=15s
+EOF
+  pkexec mkdir -p /etc/sysctl.d
+  cat <<'EOF' | pkexec tee /etc/sysctl.d/99-sysrq-debug.conf >/dev/null
+# Raises the SysRq function set (adds 'w' dump-blocked-tasks and 'l'
+# backtrace-all-CPUs) beyond Fedora's default of 16 (sync only), for
+# manual use the moment something looks hung, before the power button.
+# Part of the permanent crash/hang forensics baseline (thinkpad-fedora-agent
+# decision D33) — not tied to the s2idle investigation specifically,
+# despite the sysrq being introduced during it.
+kernel.sysrq = 1
+EOF
+  pkexec systemctl daemon-reload
+  pkexec systemctl enable --now pm-debug-messages.service
+  pkexec systemctl restart systemd-journald
+  pkexec sysctl --system
+  pkexec etckeeper commit 'Arm permanent crash/hang forensics baseline (D33)'
+  echo "done    crash-forensics baseline armed"
+}
+
+fix_fprintd_mitigation() {
+  echo "applying fprintd crash-loop mitigation (I015)..."
+  pkexec mkdir -p /etc/systemd/system/fprintd.service.d
+  cat <<'EOF' | pkexec tee /etc/systemd/system/fprintd.service.d/override.conf >/dev/null
+[Service]
+Restart=on-failure
+RestartSec=2
+Environment=G_MESSAGES_DEBUG=all
+EOF
+  pkexec systemctl daemon-reload
+  pkexec etckeeper commit 'Auto-restart fprintd on crash + verbose logging (incidents/I015)'
+  echo "done    fprintd mitigation applied"
+}
+
+# Runs all checks, printing status the same way regardless of check/fix
+# mode. Sets the *_missing flags used by the caller.
+check() {
 steps_needed=0
 
 if [ -f "$REPO_FILE" ]; then
@@ -175,8 +258,8 @@ fi
 # no-op without a driver-version-matched GL.nvidia runtime extension — see
 # I005. Checked here, not just documented, because there's no error when
 # it's missing: GLVND just falls back to Mesa and the dGPU sits idle.
-if command -v nvidia-smi >/dev/null 2>&1; then
-  driver_version="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null)"
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+  driver_version="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || true)"
   # Flatpak extension IDs use dashes (610-57-04), nvidia-smi reports dots (610.57.04).
   driver_version_dashed="${driver_version//./-}"
   if [ -n "$driver_version_dashed" ]; then
@@ -389,51 +472,21 @@ fi
 if [ "$baseline_missing" -eq 1 ]; then
   overall_missing=1
   echo
-  echo "Run (as separate, reviewable commands — do not chain):"
-  echo "  cat <<'EOF' | pkexec tee /etc/systemd/system/pm-debug-messages.service"
-  echo "  [Unit]"
-  echo "  Description=Enable verbose kernel PM (suspend/resume) debug messages"
-  echo "  Documentation=man:systemd-sleep(8)"
-  echo "  DefaultDependencies=no"
-  echo "  Before=sysinit.target"
-  echo "  "
-  echo "  [Service]"
-  echo "  Type=oneshot"
-  echo "  ExecStart=/usr/bin/bash -c 'echo 1 > /sys/power/pm_debug_messages'"
-  echo "  RemainAfterExit=yes"
-  echo "  "
-  echo "  [Install]"
-  echo "  WantedBy=sysinit.target"
-  echo "  EOF"
-  echo "  pkexec mkdir -p /etc/systemd/journald.conf.d"
-  echo "  cat <<'EOF' | pkexec tee /etc/systemd/journald.conf.d/10-crash-baseline-sync.conf"
-  echo "  [Journal]"
-  echo "  # Baseline for crash/hang forensics (thinkpad-fedora-agent decision D33)."
-  echo "  # Permanent, generic, host-pinned — not tied to any single open"
-  echo "  # investigation. Default SyncIntervalSec (5min) batches writes, so the"
-  echo "  # last seconds before a hard power-cycle can be lost from the page cache."
-  echo "  # 15s is loose enough to avoid meaningful fsync/write-amplification cost"
-  echo "  # at idle, while still comfortably covering a hard-crash log-loss window."
-  echo "  # A live investigation may layer a tighter override on top via a"
-  echo "  # higher-sorting conf.d file (see 99-pm-debug-sync.conf) — remove only"
-  echo "  # that override when the investigation closes; this baseline stays."
-  echo "  SyncIntervalSec=15s"
-  echo "  EOF"
-  echo "  pkexec mkdir -p /etc/sysctl.d"
-  echo "  cat <<'EOF' | pkexec tee /etc/sysctl.d/99-sysrq-debug.conf"
-  echo "  # Raises the SysRq function set (adds 'w' dump-blocked-tasks and 'l'"
-  echo "  # backtrace-all-CPUs) beyond Fedora's default of 16 (sync only), for"
-  echo "  # manual use the moment something looks hung, before the power button."
-  echo "  # Part of the permanent crash/hang forensics baseline (thinkpad-fedora-agent"
-  echo "  # decision D33) — not tied to the s2idle investigation specifically,"
-  echo "  # despite the sysrq being introduced during it."
-  echo "  kernel.sysrq = 1"
-  echo "  EOF"
-  echo "  pkexec systemctl daemon-reload"
-  echo "  pkexec systemctl enable --now pm-debug-messages.service"
-  echo "  pkexec systemctl restart systemd-journald"
-  echo "  pkexec sysctl --system"
-  echo "  pkexec etckeeper commit 'Arm permanent crash/hang forensics baseline (D33)'"
+  if [ "$cmd" = "fix" ]; then
+    echo "(fix mode: will apply this below)"
+  else
+    echo "Run: hosts/thinkpad-e14-gen5/quirks.sh fix"
+    echo "  — or, as separate, reviewable commands:"
+    echo "  cat <<'EOF' | pkexec tee /etc/systemd/system/pm-debug-messages.service"
+    echo "  [Unit] ... (see quirks.sh fix_forensics_baseline for the full unit)"
+    echo "  cat <<'EOF' | pkexec tee /etc/systemd/journald.conf.d/10-crash-baseline-sync.conf"
+    echo "  [Journal] SyncIntervalSec=15s"
+    echo "  cat <<'EOF' | pkexec tee /etc/sysctl.d/99-sysrq-debug.conf"
+    echo "  kernel.sysrq = 1"
+    echo "  pkexec systemctl daemon-reload && pkexec systemctl enable --now pm-debug-messages.service"
+    echo "  pkexec systemctl restart systemd-journald && pkexec sysctl --system"
+    echo "  pkexec etckeeper commit 'Arm permanent crash/hang forensics baseline (D33)'"
+  fi
 fi
 
 echo
@@ -449,6 +502,11 @@ echo
 #   - no_console_suspend kernel arg: keeps the kernel console live through
 #     suspend instead of going silent, so messages may print to the
 #     physical screen at the moment of freeze.
+#
+# Stays print-only even in fix mode: the no_console_suspend kargs change is
+# OS-image layer (needs a reboot), and this block mixes it with the journald
+# override — splitting the two apart to auto-run only half would be a
+# partial, confusing fix. Run by hand as usual.
 #
 # To remove once the bug is caught — ONLY this block, the baseline above
 # stays armed:
@@ -526,20 +584,50 @@ fi
 if [ "$fprintd_mitigation_missing" -eq 1 ]; then
   overall_missing=1
   echo
-  echo "Run (as separate, reviewable commands — do not chain):"
-  echo "  pkexec mkdir -p /etc/systemd/system/fprintd.service.d"
-  echo "  cat <<'EOF' | pkexec tee /etc/systemd/system/fprintd.service.d/override.conf"
-  echo "  [Service]"
-  echo "  Restart=on-failure"
-  echo "  RestartSec=2"
-  echo "  Environment=G_MESSAGES_DEBUG=all"
-  echo "  EOF"
-  echo "  pkexec systemctl daemon-reload"
-  echo "  pkexec etckeeper commit 'Auto-restart fprintd on crash + verbose logging (incidents/I015)'"
+  if [ "$cmd" = "fix" ]; then
+    echo "(fix mode: will apply this below)"
+  else
+    echo "Run: hosts/thinkpad-e14-gen5/quirks.sh fix"
+    echo "  — or, as separate, reviewable commands:"
+    echo "  pkexec mkdir -p /etc/systemd/system/fprintd.service.d"
+    echo "  cat <<'EOF' | pkexec tee /etc/systemd/system/fprintd.service.d/override.conf"
+    echo "  [Service]"
+    echo "  Restart=on-failure"
+    echo "  RestartSec=2"
+    echo "  Environment=G_MESSAGES_DEBUG=all"
+    echo "  EOF"
+    echo "  pkexec systemctl daemon-reload"
+    echo "  pkexec etckeeper commit 'Auto-restart fprintd on crash + verbose logging (incidents/I015)'"
+  fi
 fi
+}
 
-if [ "$overall_missing" -eq 1 ]; then
-  exit 1
-fi
+cmd="${1:-check}"
 
-echo "all quirks satisfied"
+case "$cmd" in
+  check|fix)
+    check
+
+    if [ "$cmd" = "fix" ]; then
+      echo
+      if [ "$baseline_missing" -eq 1 ]; then
+        fix_forensics_baseline
+      fi
+      if [ "$fprintd_mitigation_missing" -eq 1 ]; then
+        fix_fprintd_mitigation
+      fi
+      if [ "$baseline_missing" -eq 0 ] && [ "$fprintd_mitigation_missing" -eq 0 ]; then
+        echo "nothing to fix — the two auto-fixable quirks are already satisfied"
+      fi
+    fi
+
+    if [ "$overall_missing" -eq 1 ]; then
+      exit 1
+    fi
+
+    echo "all quirks satisfied"
+    ;;
+  *)
+    usage
+    ;;
+esac

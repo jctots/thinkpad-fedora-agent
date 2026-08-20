@@ -23,3 +23,10 @@ as every report-only script in this repo. Some entries (like
 `tpm2-luks-unlock.sh`'s enrollment step) explicitly require an interactive
 terminal and can't be run non-interactively; say so rather than attempting
 it as a background command.
+
+`quirks.sh`'s two purely-`/etc`-write remediations (crash-forensics
+baseline, fprintd crash-loop mitigation) are directly runnable via
+`hosts/thinkpad-e14-gen5/quirks.sh fix` — by the agent or the user standalone,
+same trust level as `gpu-toggle.sh`. Everything else it reports missing
+(fingerprint reader, NVIDIA, xpadneo, the s2idle kargs escalation) stays
+print-only since those need `rpm-ostree`/toolbox builds or a reboot.

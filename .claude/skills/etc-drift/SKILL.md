@@ -10,8 +10,8 @@ via `pkexec` rather than `sudo` — this script has no TTY to prompt against
 when run non-interactively, and `pkexec` is CLAUDE.md's rule for root
 commands anyway. Expect the GNOME polkit dialog to appear on screen. It's
 genuinely read-only but still an ask-tier command per `.claude/settings.json`
-— that prompt is expected and correct, not a bug. The script itself never
-runs `etckeeper commit` or writes anything; it only reports.
+— that prompt is expected and correct, not a bug. The default `check` action
+never runs `etckeeper commit` or writes anything; it only reports.
 
 Three possible outcomes:
 - **`/etc is not a git repository`** — etckeeper was never initialised. This
@@ -19,9 +19,11 @@ Three possible outcomes:
   show the printed `rpm-ostree install etckeeper` + `etckeeper init` commands
   and ask before running them (a layered package + reboot, real host
   mutation).
-- **Uncommitted changes found** — show the diff-shaped output and the
-  printed `pkexec etckeeper commit "..."` command; ask before running it,
-  same as any other `/etc` write.
+- **Uncommitted changes found** — show the diff-shaped output and offer
+  `scripts/etc-drift.sh fix [message]`, which commits directly via
+  `pkexec etckeeper commit` (a single reversible commit to an existing repo,
+  same trust level as `gpu-toggle.sh`) — runnable by the agent or the user
+  standalone; ask before running it, same as any other `/etc` write.
 - **Clean** — nothing to do, just report it.
 
 Run this reflexively after any session that touched `/etc`, unit files, or
