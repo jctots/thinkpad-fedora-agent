@@ -81,7 +81,7 @@ trap cleanup EXIT
 echo "==> building + signing kmod-${kmod_name} for kernel ${running_kernel}"
 akmods --kernels "$running_kernel" --kmod "$kmod_name"
 
-built_rpm="$(find /var/cache/akmods -name "kmod-${kmod_name}-${running_kernel}-*.rpm" -newer "$key_dir/.rpmmacros" 2>/dev/null | head -n1)"
+built_rpm="$(find /var/cache/akmods -name "kmod-${kmod_name}-${running_kernel}-*.rpm" -newer "$key_dir/.rpmmacros" 2>/dev/null | head -n1 || true)"
 if [ -z "$built_rpm" ]; then
   built_rpm="$(find /var/cache/akmods -name "kmod-${kmod_name}-${running_kernel}-*.rpm" 2>/dev/null | sort | tail -n1)"
 fi
@@ -93,12 +93,13 @@ fi
 echo "==> verifying signature"
 extract_dir="$(mktemp -d)"
 (cd "$extract_dir" && rpm2cpio "$built_rpm" | cpio -idm --quiet)
-ko_file="$(find "$extract_dir" -name '*.ko*' | head -n1)"
+ko_file="$(find "$extract_dir" -name '*.ko*' | head -n1 || true)"
 if [ -z "$ko_file" ]; then
   echo "error   couldn't find a .ko file inside $built_rpm to verify" >&2
   exit 1
 fi
-if ! modinfo "$ko_file" | grep -qi "signer.*akmods\|module signature appended"; then
+modinfo_out="$(modinfo "$ko_file" 2>/dev/null || true)"
+if ! grep -qi "signer.*akmods\|module signature appended" <<<"$modinfo_out"; then
   echo "error   built module does not look signed — modinfo output:" >&2
   modinfo "$ko_file" >&2
   exit 1

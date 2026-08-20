@@ -64,8 +64,8 @@ for label in "${!sources[@]}"; do
             echo "not installed  $id  (see install-flatpaks.sh / extras flatpaks.sh for the install command)"
             continue
         fi
-        installed_commit="$(flatpak info "$id" 2>/dev/null | awk '/Commit:/ {print $2; exit}')"
-        remote_commit="$(flatpak remote-info flathub "$id" 2>/dev/null | awk '/Commit:/ {print $2; exit}')"
+        installed_commit="$(flatpak info "$id" 2>/dev/null | awk '/Commit:/ {print $2; exit}' || true)"
+        remote_commit="$(flatpak remote-info flathub "$id" 2>/dev/null | awk '/Commit:/ {print $2; exit}' || true)"
         if [ -z "$remote_commit" ]; then
             echo "unknown        $id  (couldn't reach flathub remote-info)"
         elif [ "$installed_commit" = "$remote_commit" ]; then

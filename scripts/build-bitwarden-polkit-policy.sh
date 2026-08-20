@@ -33,7 +33,7 @@ toolbox run bash -c "
   rpmbuild -bb ~/rpmbuild/SPECS/bitwarden-polkit-policy.spec
 "
 
-rpm_path="$(ls -t "$HOME"/rpmbuild/RPMS/noarch/${rpm_name}-*.rpm | head -1)"
+rpm_path="$(ls -t "$HOME"/rpmbuild/RPMS/noarch/${rpm_name}-*.rpm | head -1 || true)"
 
 echo
 echo "built: $rpm_path"

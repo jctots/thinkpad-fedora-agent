@@ -20,13 +20,15 @@ extensions=(
   "claude-code-usage@haletran.com|https://extensions.gnome.org/extension/8352/claude-code-usage/|Top-bar Claude Code usage indicator — foundational here because this project's own operating model runs on Claude Code, unlike the personal-preference extensions in extras' gnome-extensions.sh. Picked over ccusage-indicator@lordvcs.github.io after a side-by-side trial 2026-08-18: the ccusage one shells out to npx/ccusage and errored on every enable until nodejs was layered (commit d0eaf99), and once npx worked it showed wrong usage values; this one works cleanly with no extra dependency"
 )
 
+installed_extensions="$(gnome-extensions list 2>/dev/null || true)"
+
 missing=()
 for entry in "${extensions[@]}"; do
   uuid="${entry%%|*}"
   rest="${entry#*|}"
   url="${rest%%|*}"
   reason="${rest#*|}"
-  if gnome-extensions list 2>/dev/null | grep -qx "$uuid"; then
+  if grep -qx "$uuid" <<<"$installed_extensions"; then
     enabled="$(gnome-extensions info "$uuid" 2>/dev/null | grep -oP '(?<=Enabled: ).*' || echo unknown)"
     if [ "$enabled" = "Yes" ]; then
       echo "ok      $uuid"

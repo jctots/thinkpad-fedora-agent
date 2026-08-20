@@ -186,7 +186,7 @@ echo
 nvidia_missing=0
 running_kernel="$(uname -r)"
 
-installed_kmod="$(rpm -qa 'kmod-nvidia-*' 2>/dev/null | head -n1)"
+installed_kmod="$(rpm -qa 'kmod-nvidia-*' 2>/dev/null | head -n1 || true)"
 if [ -n "$installed_kmod" ]; then
   if [[ "$installed_kmod" == "kmod-nvidia-${running_kernel}"* ]]; then
     echo "ok      $installed_kmod matches running kernel ($running_kernel)"
@@ -227,7 +227,8 @@ else
   nvidia_missing=1
 fi
 
-if mokutil --list-enrolled 2>/dev/null | grep -qi akmods; then
+mok_enrolled="$(mokutil --list-enrolled 2>/dev/null || true)"
+if grep -qi akmods <<<"$mok_enrolled"; then
   echo "ok      akmods signing key enrolled in MOK"
 else
   echo "missing akmods signing key enrolled in MOK (required — Secure Boot is enabled on this host)"
@@ -343,7 +344,7 @@ echo
 # below green.
 
 xpadneo_missing=0
-installed_xpadneo_kmod="$(rpm -qa 'kmod-xpadneo-*' 2>/dev/null | head -n1)"
+installed_xpadneo_kmod="$(rpm -qa 'kmod-xpadneo-*' 2>/dev/null | head -n1 || true)"
 if [ -n "$installed_xpadneo_kmod" ]; then
   if [[ "$installed_xpadneo_kmod" == "kmod-xpadneo-${running_kernel}"* ]]; then
     echo "ok      $installed_xpadneo_kmod matches running kernel ($running_kernel)"

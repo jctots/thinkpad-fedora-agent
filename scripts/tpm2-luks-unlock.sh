@@ -35,7 +35,14 @@ else
   steps_needed=1
 fi
 
-if command -v mokutil >/dev/null 2>&1 && mokutil --sb-state 2>/dev/null | grep -q "SecureBoot enabled"; then
+sb_enabled=0
+if command -v mokutil >/dev/null 2>&1; then
+  sb_state="$(mokutil --sb-state 2>/dev/null || true)"
+  if grep -q "SecureBoot enabled" <<<"$sb_state"; then
+    sb_enabled=1
+  fi
+fi
+if [ "$sb_enabled" -eq 1 ]; then
   echo "ok      Secure Boot enabled (required for a PCR 7 binding that survives OS updates)"
 else
   echo "missing Secure Boot enabled — PCR 7 binding will not be meaningful, enable it in firmware first"
@@ -52,7 +59,7 @@ fi
 ROOT_LUKS_UUID="$(findmnt -no SOURCE /sysroot 2>/dev/null | xargs -I{} lsblk -no UUID -s {} 2>/dev/null | tail -1 || true)"
 if [ -z "$ROOT_LUKS_UUID" ]; then
   # Fallback: the crypto_LUKS partition backing whatever /sysroot's device tree resolves to.
-  ROOT_LUKS_UUID="$(lsblk -rno NAME,FSTYPE,UUID | awk '$2=="crypto_LUKS"{print $3; exit}')"
+  ROOT_LUKS_UUID="$(lsblk -rno NAME,FSTYPE,UUID | awk '$2=="crypto_LUKS"{print $3; exit}' || true)"
 fi
 
 if [ -z "$ROOT_LUKS_UUID" ]; then
@@ -60,7 +67,8 @@ if [ -z "$ROOT_LUKS_UUID" ]; then
   steps_needed=1
 else
   echo "ok      root LUKS device detected: UUID=$ROOT_LUKS_UUID"
-  if sudo -n systemd-cryptenroll "/dev/disk/by-uuid/$ROOT_LUKS_UUID" 2>/dev/null | grep -qi tpm2; then
+  cryptenroll_out="$(sudo -n systemd-cryptenroll "/dev/disk/by-uuid/$ROOT_LUKS_UUID" 2>/dev/null || true)"
+  if grep -qi tpm2 <<<"$cryptenroll_out"; then
     echo "ok      TPM2 keyslot already enrolled on this device"
   else
     echo "missing TPM2 keyslot enrollment (or sudo needed a prompt to check — rerun with a terminal if unsure)"
