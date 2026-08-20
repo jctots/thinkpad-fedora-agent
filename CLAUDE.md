@@ -97,6 +97,22 @@ named dependency of this repo, but the ruleset is the portable part — the
 binding to the harness is confined to `bash-guard.py` and `audit.py`, and it
 stays that way so the rules can be lifted without them.
 
+## Agent tool usage
+
+When spawning non-fork subagents via the Agent tool, route by task shape, not
+a single fixed model: `haiku` for mechanical/bounded work (pure search, grep,
+well-specified boilerplate, status parsing, single-doc summarization),
+`sonnet` for most implementation/debugging/judgment work (also the
+no-override default), `opus` for ambiguous/high-stakes/architectural work
+(planning, security-sensitive review, deep code review, root-causing without
+a repro). Applies only to non-fork agents — a `fork` always inherits the
+parent's model since it's continuing the same context, so the override is a
+no-op there. Before delegating at all, weigh whether the context a fresh
+agent needs (it starts with zero memory of the conversation) would itself
+cost more tokens than doing the task inline — if so, skip delegation
+entirely regardless of which tier would apply. Same rule kept consistent
+across this repo, the second-brain vault, and `3etn-net-iac`.
+
 ## Session shape
 
 This session runs in a terminal with this repo as the working directory — not
