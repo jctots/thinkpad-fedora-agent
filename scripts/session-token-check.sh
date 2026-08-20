@@ -20,6 +20,17 @@
 # SESSION_TOKEN_CRITICAL_THRESHOLD (default 150000, 75%). Only the
 # higher-tier message prints once both are crossed.
 #
+# Output format depends on the harness surface, verified live 2026-08-20 by
+# 3etn-net-iac's ported copy of this script: CLAUDE_CODE_ENTRYPOINT=claude-vscode
+# (the VS Code extension) renders {"systemMessage": ...} JSON as NOTHING —
+# silently dropped, confirmed by a 375k-token session with zero warning ever
+# appearing. Plain text is what actually renders there (wrapped as a
+# "UserPromptSubmit hook success: ..." line — ugly, but visible). This
+# session is documented to run in a terminal, not the VS Code extension (see
+# CLAUDE.md "Session shape"), so systemMessage is expected to be the live
+# path here — the branch is defensive parity with the port, not a fix for an
+# observed failure in this repo.
+#
 # Usage: piped stdin JSON from the UserPromptSubmit hook, e.g.
 #   echo '{"transcript_path":"/path/to/session.jsonl"}' | scripts/session-token-check.sh
 
@@ -61,11 +72,17 @@ else:
 " "$transcript_path")"
 
 if [ "$context_size" -ge "$critical_threshold" ]; then
-    printf '{"systemMessage": "Session context is at ~%s tokens (critical threshold %s) — wrap up or start fresh now."}\n' \
-        "$context_size" "$critical_threshold"
+    message="Session context is at ~${context_size} tokens (critical threshold ${critical_threshold}) — wrap up or start fresh now."
 elif [ "$context_size" -ge "$warn_threshold" ]; then
-    printf '{"systemMessage": "Session context is at ~%s tokens (threshold %s) — consider wrapping up or starting fresh soon."}\n' \
-        "$context_size" "$warn_threshold"
+    message="Session context is at ~${context_size} tokens (threshold ${warn_threshold}) — consider wrapping up or starting fresh soon."
+else
+    exit 0
+fi
+
+if [ "${CLAUDE_CODE_ENTRYPOINT:-}" = "claude-vscode" ]; then
+    printf '%s\n' "$message"
+else
+    printf '{"systemMessage": %s}\n' "$(jq -Rn --arg m "$message" '$m')"
 fi
 
 exit 0

@@ -1,7 +1,8 @@
 # thinkpad-fedora-agent — Agent Instructions
 
-You are operating a Fedora Silverblue ThinkPad. You hold real privilege under
-manual approval. Read this before proposing anything that touches the system.
+You are the **thinkpad agent** — a Claude Code session rooted in this repo,
+operating a Fedora Silverblue ThinkPad. You hold real privilege under manual
+approval. Read this before proposing anything that touches the system.
 
 ## The rule that matters
 
@@ -114,6 +115,14 @@ entirely regardless of which tier would apply. Same rule kept consistent
 across this repo, the second-brain vault, and `3etn-net-iac`.
 
 ## Session shape
+
+The user refers to distinct sessions by name: **"thinkpad agent"** is this
+session, rooted in this repo. **"homelab agent"** is a separate session
+rooted in `3etn-net-iac`. **"second brain agent"** is a separate session
+rooted in the `second-brain` vault repo. Each is a distinct working directory
+with its own guardrails/hooks/context — this session cannot act as another
+one just by being asked to; it would need to actually run rooted there, or
+have the request relayed.
 
 This session runs in a terminal with this repo as the working directory — not
 the VS Code extension. Guardrails, hooks and permissions resolve from the
