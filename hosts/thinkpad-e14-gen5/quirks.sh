@@ -303,13 +303,17 @@ echo
 #   - pm_debug_messages: verbose per-device suspend/resume timing. Resets
 #     every boot (/sys/power node, not persisted); pm-debug-messages.service
 #     re-arms it at boot.
-#   - pm_trace: stamps a magic code into RTC hardware right before each
-#     device's suspend/resume callback — survives even a hard power-off,
-#     doesn't depend on journald at all. Next boot's dmesg identifies the
-#     exact device that was mid-suspend when it froze. Resets every boot;
-#     pm-trace.service re-arms it. Side effect: RTC gets a bogus value
-#     after a traced hang, so system clock reads wrong until NTP resyncs —
-#     cosmetic, self-corrects.
+#   - pm_trace: DROPPED FROM BASELINE 2026-08-20 (incident I017). Stamps a
+#     magic code into RTC hardware right before each device's suspend/resume
+#     callback — survives even a hard power-off, doesn't depend on journald
+#     at all. In practice the RTC corruption it causes is not cosmetic: it
+#     seeds a wrong system clock at every boot (RTC-in-localtime delta
+#     applied before chrony starts) and only self-corrects once chrony
+#     reaches an NTP server, which can take a while. Cost outweighed the one
+#     lead it ever produced (`memory48`, one data point). `pm-trace.service`
+#     disabled, `/sys/power/pm_trace` written back to 0 — no longer part of
+#     this baseline. Re-arm by hand only for a specific future hang, not
+#     permanently: `pkexec systemctl enable --now pm-trace.service`.
 #   - sysrq bitmask: raises kernel.sysrq to 1 (adds SysRq+W dump-blocked-
 #     tasks, SysRq+L backtrace-all-CPUs), usable by hand at the moment
 #     something looks hung, before reaching for the power button.
@@ -340,17 +344,15 @@ else
 fi
 
 if [ "$(cat /sys/power/pm_trace 2>/dev/null)" = "1" ]; then
-  echo "ok      pm_trace armed for this boot (RTC-based device tracing, survives hard power-off)"
+  echo "warn    pm_trace armed for this boot — dropped from baseline (I017), was corrupting the RTC/clock; disarm with pkexec bash -c 'echo 0 > /sys/power/pm_trace'"
 else
-  echo "missing pm_trace not armed this boot"
-  baseline_missing=1
+  echo "ok      pm_trace not armed (dropped from baseline 2026-08-20, see I017)"
 fi
 
 if systemctl is-enabled pm-trace.service >/dev/null 2>&1; then
-  echo "ok      pm-trace.service enabled (re-arms on every boot)"
+  echo "warn    pm-trace.service enabled — dropped from baseline (I017); pkexec systemctl disable --now pm-trace.service"
 else
-  echo "missing pm-trace.service not enabled"
-  baseline_missing=1
+  echo "ok      pm-trace.service not enabled (dropped from baseline 2026-08-20, see I017)"
 fi
 
 if [ "$(cat /proc/sys/kernel/sysrq 2>/dev/null)" = "1" ]; then
@@ -386,21 +388,6 @@ if [ "$baseline_missing" -eq 1 ]; then
   echo "  [Install]"
   echo "  WantedBy=sysinit.target"
   echo "  EOF"
-  echo "  cat <<'EOF' | pkexec tee /etc/systemd/system/pm-trace.service"
-  echo "  [Unit]"
-  echo "  Description=Arm pm_trace (RTC-based suspend/resume device tracing) for s2idle hang investigation"
-  echo "  Documentation=man:systemd-sleep(8)"
-  echo "  DefaultDependencies=no"
-  echo "  Before=sysinit.target"
-  echo "  "
-  echo "  [Service]"
-  echo "  Type=oneshot"
-  echo "  ExecStart=/usr/bin/bash -c 'echo 1 > /sys/power/pm_trace'"
-  echo "  RemainAfterExit=yes"
-  echo "  "
-  echo "  [Install]"
-  echo "  WantedBy=sysinit.target"
-  echo "  EOF"
   echo "  pkexec mkdir -p /etc/systemd/journald.conf.d"
   echo "  cat <<'EOF' | pkexec tee /etc/systemd/journald.conf.d/10-crash-baseline-sync.conf"
   echo "  [Journal]"
@@ -426,7 +413,7 @@ if [ "$baseline_missing" -eq 1 ]; then
   echo "  kernel.sysrq = 1"
   echo "  EOF"
   echo "  pkexec systemctl daemon-reload"
-  echo "  pkexec systemctl enable --now pm-debug-messages.service pm-trace.service"
+  echo "  pkexec systemctl enable --now pm-debug-messages.service"
   echo "  pkexec systemctl restart systemd-journald"
   echo "  pkexec sysctl --system"
   echo "  pkexec etckeeper commit 'Arm permanent crash/hang forensics baseline (D33)'"
