@@ -4,7 +4,7 @@
 
 PYTHON ?= python3
 
-.PHONY: probe secrets-probe check hooks
+.PHONY: probe secrets-probe check hooks manifest-check
 
 ## probe — run the acceptance set against the real guard
 probe:
@@ -21,3 +21,8 @@ check:
 ## hooks — point git at the tracked pre-commit secret scan
 hooks:
 	@scripts/install-hooks.sh
+
+## manifest-check — every package/flatpak/extension in the manifest scripts
+## has a matching row in scripts/PACKAGES.md
+manifest-check:
+	@scripts/check-manifest-docs.sh

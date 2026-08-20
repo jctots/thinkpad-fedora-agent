@@ -63,3 +63,12 @@ reading the staged diff yourself."
 fi
 
 printf 'pre-commit: clean\n'
+
+printf 'pre-commit: checking manifest docs for drift...\n'
+if ! scripts/check-manifest-docs.sh; then
+    fail "a manifest script and scripts/PACKAGES.md have drifted apart (see above).
+
+Add the missing row(s) to scripts/PACKAGES.md in this same commit — that is
+the whole point of the doc, and 'make manifest-check' catching it here beats
+it going unnoticed the way v4l-utils and nodejs did."
+fi
