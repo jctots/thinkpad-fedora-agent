@@ -107,9 +107,15 @@ main() {
     if [ -n "${EXTRAS_DIR:-}" ] && [ "$EXTRAS_DIR" != "PLACEHOLDER" ]; then
         if [ -d "$EXTRAS_DIR" ]; then
             log "extras: $EXTRAS_DIR"
-            for script in "$EXTRAS_DIR"/*.sh; do
+            for script in "$EXTRAS_DIR"/scripts/*.sh; do
                 run_script "$script"
             done
+            if [ -n "$profile" ] && [ -d "$EXTRAS_DIR/hosts/$profile" ]; then
+                log "extras host profile: $profile"
+                for script in "$EXTRAS_DIR/hosts/$profile"/*.sh; do
+                    run_script "$script"
+                done
+            fi
         else
             warn "EXTRAS_DIR is set to '$EXTRAS_DIR' but that directory does not exist — skipping"
         fi

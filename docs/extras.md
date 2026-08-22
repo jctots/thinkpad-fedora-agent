@@ -21,9 +21,14 @@ the same path as input — set one and assume the other follows. It doesn't:
   EXTRAS_DIR="/home/you/code/thinkpad-extras"
   ```
   `install.sh` sources `local/secrets.env`, and if `EXTRAS_DIR` is set to a
-  real directory, it runs every `*.sh` in it — flat, alphabetical, same as
-  the host-profile layer — after the base layer and host profile. If
-  `EXTRAS_DIR` is unset, `PLACEHOLDER`, missing, or `local/secrets.env`
+  real directory, it runs every `*.sh` in `EXTRAS_DIR/scripts/` — flat,
+  alphabetical — after the base layer and host profile. If a directory
+  matching the detected host slug exists at `EXTRAS_DIR/hosts/<slug>/`
+  (same slug this repo's own `hosts/<slug>/` uses), its scripts run too,
+  same base-then-host-profile order as this repo. That split only matters
+  once the private repo runs on more than one machine — a single-machine
+  extras repo can leave `hosts/` empty or absent. If `EXTRAS_DIR` is unset,
+  `PLACEHOLDER`, missing, or `local/secrets.env`
   itself doesn't exist yet, this is a silent no-op — `install.sh` warns and
   skips it, same as it does for every other authenticated step. Every fork
   behaves identically until its owner opts in. **This file is off-limits to
@@ -54,15 +59,25 @@ has neither problem.
    it lives.
 2. **Clone it** somewhere under your own `~/code/` (or wherever), sibling to
    this repo, not inside it.
-3. **Give it the same shape this repo uses**, scaled down — it doesn't need
-   the base/host-profile split, just:
+3. **Give it the same shape this repo uses**, scaled down to what a private
+   layer actually needs:
    ```
    README.md
    incidents/            same convention as this repo's incidents/, own index.md
    incidents/_template.md
-   PACKAGES.md           narrated companion to the flatpak/package scripts, if any
-   *.sh                  flat, idempotent, report-only — same contract as scripts/
+   docs/                 procedure/narrative docs (not manifest companions)
+   scripts/
+     PACKAGES.md         narrated companion to the flatpak/package scripts, if any
+     *.sh                flat, idempotent, report-only — same contract as scripts/
+   hosts/<slug>/         only once this repo runs on more than one machine —
+                         same slug as this repo's own hosts/<slug>/. Most
+                         personal app/config choices travel with the person,
+                         not the hardware, so this stays empty until
+                         something genuinely differs machine-to-machine.
    ```
+   The one thing intentionally still skipped: no `local/` in the private
+   repo — secrets stay in *this* repo's gitignored `local/secrets.env`,
+   which `install.sh` already sources before running extras' scripts.
 4. **Point this repo at it**: add `EXTRAS_DIR="/abs/path/to/your-extras"` to
    your gitignored `local/secrets.env` (copy from
    `local/secrets.env.example` if you haven't already).
@@ -71,7 +86,8 @@ has neither problem.
    gitignored `.claude/settings.local.json`. This takes effect on the *next*
    session start, not the running one (see CLAUDE.md's "Session shape").
 6. Run `./install.sh` — it now runs the base layer, your host profile, then
-   every `*.sh` in `EXTRAS_DIR`, in that order.
+   every `*.sh` in `EXTRAS_DIR/scripts/`, then (if it exists)
+   `EXTRAS_DIR/hosts/<slug>/`, in that order.
 
 ## What goes where
 

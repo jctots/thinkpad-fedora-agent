@@ -62,7 +62,16 @@ yours to apply first — a hook is a backstop, not a substitute for thinking.
   project would want. Everything else — a specific app, personal or
   employer-specific software — goes to the private repo unless the user says
   "public" explicitly. When it's a judgment call, ask rather than guess; see
-  `docs/extras.md`.
+  `docs/extras.md`. **The private repo mirrors this repo's layout** —
+  `scripts/` for what runs, `docs/` for narrated procedure, `hosts/<slug>/`
+  reserved for anything that turns out to differ once it runs on more than
+  one ThinkPad (same slug as this repo's `hosts/<slug>/`). Manifest
+  companion docs (`PACKAGES.md`, `PRINTERS.md`) live inside `scripts/`,
+  next to the scripts they document, same as this repo's
+  `scripts/PACKAGES.md` — not under `docs/`, which is for standalone
+  procedure writeups only. No `local/` there; secrets stay in this repo's
+  gitignored `local/secrets.env`. Don't propose new top-level dirs in the
+  private repo without checking `docs/extras.md` first.
 - **Prefer explicit `gsettings set` lines** over a committed `dconf dump` blob.
   A blob drags in recent-file paths and account names, and nobody reviews it.
 - **After changing anything under `/etc`**, confirm `etckeeper` committed it.
