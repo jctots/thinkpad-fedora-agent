@@ -494,8 +494,8 @@ echo
 
 # --- s2idle resume-hang investigation: case-specific escalation (TEMPORARY) ---
 # Open bug, not a fix: lid-close suspend sometimes never resumes (hard
-# power-cycle required). Two pieces layered on top of the permanent
-# baseline above, both scoped to this investigation only:
+# power-cycle required). Pieces layered on top of the permanent baseline
+# above, all scoped to this investigation only:
 #   - journald 1s fsync: 99-pm-debug-sync.conf overrides the 15s baseline
 #     down to 1s (conf.d files apply in sort order, last wins) — a tighter
 #     margin specifically because s2idle hangs have shown debug output
@@ -503,19 +503,34 @@ echo
 #   - no_console_suspend kernel arg: keeps the kernel console live through
 #     suspend instead of going silent, so messages may print to the
 #     physical screen at the moment of freeze.
+#   - processor.max_cstate=1 kernel arg: caps CPU idle states at C1, added
+#     2026-08-23 (incidents/I021 recurrence) to bisect whether the
+#     ACPI0007:11 (a CPU-core object) pm_trace hit is a deep-C-state
+#     resume bug. If the hang stops recurring with this set, that's a
+#     strong signal; if it still happens, C-states are cleared as a cause.
+#   - acpi.debug_layer=0x2 acpi.debug_level=0x4 kernel args: verbose ACPI
+#     PM-layer tracing, added alongside max_cstate for the same
+#     investigation — may print nothing extra if the freeze is a true
+#     hard lockup before any log call, which is itself informative.
 #
-# Stays print-only even in fix mode: the no_console_suspend kargs change is
-# OS-image layer (needs a reboot), and this block mixes it with the journald
-# override — splitting the two apart to auto-run only half would be a
-# partial, confusing fix. Run by hand as usual.
+# Stays print-only even in fix mode: all four kargs above are OS-image
+# layer (need a reboot), and this block mixes them with the journald
+# override — splitting apart to auto-run only some would be a partial,
+# confusing fix. Run by hand as usual.
 #
 # To remove once the bug is caught — ONLY this block, the baseline above
 # stays armed:
 #   pkexec rm /etc/systemd/journald.conf.d/99-pm-debug-sync.conf
-#   rpm-ostree kargs --delete=no_console_suspend
+#   rpm-ostree kargs --delete=no_console_suspend \
+#     --delete=processor.max_cstate=1 \
+#     --delete=acpi.debug_layer=0x2 \
+#     --delete=acpi.debug_level=0x4
 #   pkexec systemctl restart systemd-journald
 #   pkexec etckeeper commit "Remove s2idle escalation, bug diagnosed (see incidents/I0NN)"
 #   # then delete this block (not the baseline block above) from quirks.sh
+#   # Separately, hosts/thinkpad-e14-gen5/gpu-toggle.sh status/enable — see
+#   # that script's own header (incidents/I019/I020) for the dGPU's
+#   # independent on/off history; not reverted by anything in this block.
 
 s2idle_escalation_missing=0
 
@@ -530,6 +545,20 @@ if grep -q 'no_console_suspend' /proc/cmdline 2>/dev/null; then
   echo "ok      no_console_suspend kernel arg active this boot"
 else
   echo "missing no_console_suspend not active this boot (check 'rpm-ostree kargs', may need a reboot to apply)"
+  s2idle_escalation_missing=1
+fi
+
+if grep -q 'processor.max_cstate=1' /proc/cmdline 2>/dev/null; then
+  echo "ok      processor.max_cstate=1 kernel arg active this boot (I021 C-state bisection)"
+else
+  echo "missing processor.max_cstate=1 not active this boot (check 'rpm-ostree kargs', may need a reboot to apply)"
+  s2idle_escalation_missing=1
+fi
+
+if grep -q 'acpi.debug_layer=0x2' /proc/cmdline 2>/dev/null && grep -q 'acpi.debug_level=0x4' /proc/cmdline 2>/dev/null; then
+  echo "ok      acpi.debug_layer/level kernel args active this boot (I021 verbose ACPI PM tracing)"
+else
+  echo "missing acpi.debug_layer/level not active this boot (check 'rpm-ostree kargs', may need a reboot to apply)"
   s2idle_escalation_missing=1
 fi
 
@@ -552,7 +581,10 @@ if [ "$s2idle_escalation_missing" -eq 1 ]; then
   echo "  SyncIntervalSec=1s"
   echo "  EOF"
   echo "  pkexec systemctl restart systemd-journald"
-  echo "  rpm-ostree kargs --append=no_console_suspend"
+  echo "  rpm-ostree kargs --append=no_console_suspend \\"
+  echo "    --append=processor.max_cstate=1 \\"
+  echo "    --append=acpi.debug_layer=0x2 \\"
+  echo "    --append=acpi.debug_level=0x4"
   echo "  pkexec etckeeper commit 'Arm s2idle debug escalation over crash-forensics baseline'"
 fi
 

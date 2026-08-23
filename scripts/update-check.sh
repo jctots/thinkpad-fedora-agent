@@ -27,9 +27,13 @@ fi
 
 # Pull the "id|reason" list out of a flatpaks.sh-shaped script without
 # executing it, so this stays a pure reader of those files, not a second
-# copy of the app list to keep in sync by hand.
+# copy of the app list to keep in sync by hand. De-duplicated: a script
+# like the extras repo's flatpaks.sh declares some app IDs twice — once in
+# its install array, again in a separate overrides array (same app, extra
+# flatpak override flags) — and this is a plain list of IDs to check, not a
+# structural parse, so it can't tell those apart without the dedup.
 extract_ids() {
-    grep -oP '^\s*"\K[A-Za-z0-9._-]+(?=\|)' "$1" 2>/dev/null || true
+    grep -oP '^\s*"\K[A-Za-z0-9._-]+(?=\|)' "$1" 2>/dev/null | awk '!seen[$0]++' || true
 }
 
 echo "== OS image (rpm-ostree) =="
@@ -50,8 +54,8 @@ echo "== Flatpaks =="
 declare -A sources=(
     ["public"]="$REPO_ROOT/scripts/install-flatpaks.sh"
 )
-if [ -n "${EXTRAS_DIR:-}" ] && [ "$EXTRAS_DIR" != "PLACEHOLDER" ] && [ -f "$EXTRAS_DIR/flatpaks.sh" ]; then
-    sources["extras"]="$EXTRAS_DIR/flatpaks.sh"
+if [ -n "${EXTRAS_DIR:-}" ] && [ "$EXTRAS_DIR" != "PLACEHOLDER" ] && [ -f "$EXTRAS_DIR/scripts/flatpaks.sh" ]; then
+    sources["extras"]="$EXTRAS_DIR/scripts/flatpaks.sh"
 fi
 
 outdated=()
@@ -108,6 +112,33 @@ if command -v flatpak >/dev/null 2>&1; then
     fi
 else
     echo "flatpak not found — skipping"
+fi
+
+echo
+echo "== npm global packages =="
+if command -v npm >/dev/null 2>&1; then
+    npm_globals="$(npm ls -g --depth=0 2>/dev/null | grep -oP '^\S+ \K[a-zA-Z0-9@/._-]+(?=@)' || true)"
+    if [ -z "$npm_globals" ]; then
+        echo "no npm global packages installed"
+    else
+        npm_outdated="$(npm outdated -g 2>/dev/null || true)"
+        while IFS= read -r pkg; do
+            [ -z "$pkg" ] && continue
+            outdated_line="$(echo "$npm_outdated" | awk -v p="$pkg" '$1 == p {print $2, $4}')"
+            if [ -n "$outdated_line" ]; then
+                read -r current latest <<<"$outdated_line"
+                echo "outdated       $pkg ($current -> $latest)"
+            else
+                echo "current        $pkg"
+            fi
+        done <<<"$npm_globals"
+        if echo "$npm_outdated" | grep -qP '^\S+ '; then
+            echo
+            echo "Run: npm update -g   (or 'npm update -g <pkg>' for one at a time)"
+        fi
+    fi
+else
+    echo "npm not found — skipping"
 fi
 
 echo

@@ -1,6 +1,6 @@
 ---
 name: update-check
-description: Check for OS image updates (rpm-ostree), drift/updates across both flatpak manifests (this repo's scripts/install-flatpaks.sh and the private extras repo's flatpaks.sh, if EXTRAS_DIR is set), the full flatpak install including runtimes/extensions, and firmware (fwupd/LVFS). Use when the user asks to check for updates, upgrade the system, or update installed apps.
+description: Check for OS image updates (rpm-ostree), drift/updates across both flatpak manifests (this repo's scripts/install-flatpaks.sh and the private extras repo's flatpaks.sh, if EXTRAS_DIR is set), the full flatpak install including runtimes/extensions, npm global packages, and firmware (fwupd/LVFS). Use when the user asks to check for updates, upgrade the system, or update installed apps.
 ---
 
 Run `scripts/update-check.sh` from the repo root and show its output as-is —
@@ -15,7 +15,18 @@ it already reports, per CLAUDE.md's "deny what cannot be undone" rule:
   matches GNOME Software's "App Updates" list, which often attributes a
   runtime/extension update (e.g. a GL/VAAPI driver) to every app that
   depends on it rather than listing the runtime itself
+- every globally-installed npm package (`npm ls -g --depth=0` vs.
+  `npm outdated -g`) — generic, not tied to any specific package; whatever's
+  under the user's npm prefix at the time
 - firmware via `fwupdmgr get-updates` (LVFS)
+
+Not covered, and can't be with this same mechanism: anything side-loaded
+into an app outside a package manager entirely — e.g. a Betterbird
+WebExtension `.xpi` installed via "Install Add-on From File…" (see
+`thinkpad-fedora-extras/docs/THUNDERBIRD-CLI.md`). There's no
+installed-version-vs-remote-version query to run for that; checking for a
+newer release means re-checking the upstream GitHub releases page by hand,
+closer to `vendor-update`'s job than this skill's.
 
 It never runs `rpm-ostree upgrade`, `flatpak update`, or `fwupdmgr update`
 itself — same report-only contract as `install-flatpaks.sh`. After showing

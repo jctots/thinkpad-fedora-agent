@@ -184,6 +184,7 @@ Do this before §3.5, or that step will look like it passed when it did nothing.
 
 - [ ] `git clone <gitea-url>/second-brain` into its intended location
 - [ ] Restore the gitignored files saved in 1.4 — `.env`, `.mcp.json`, tokens. The clone is not complete without them
+- [ ] `.mcp.json`'s `paperless` entry points at a local build, not a package — it is not restored by cloning the vault. Follow `personal/projects/home-lab-infrastructure/reference.md` § Service configs → Paperless MCP: clone `jctots/paperless-mcp`, `npm install && npm run build`, then restore the entry
 - [ ] Build the RAG index: `python _scripts/rag-embed.py`. It reads `OLLAMA_HOST` and `QDRANT_HOST` from the restored `.env`, and both are home-lab services — §3.4b has to be done first
 - [ ] **Read its output, do not just check the exit code.** With those variables unset it prints `RAG not configured — skipping embed` and exits *successfully*. A green run that embedded nothing is the failure mode here, and it looks exactly like a pass
 - [ ] Start a Claude Code session **in the vault** and confirm both context injection and RAG retrieval fire
