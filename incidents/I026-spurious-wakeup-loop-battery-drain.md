@@ -349,6 +349,44 @@ tried so far (both of those left lid detection itself working; this
 didn't). Not attempting GPE-level masking again without new evidence that
 narrows why it cross-affected the lid switch.
 
+**Decision, 2026-08-25 — downgrading firmware to test the 1.42→1.43
+regression theory, settling for 1.39 not 1.42:** With three live-tunable
+approaches now ruled out (`ec_no_wakeup=1`, `ec_intr=0`, GPE 0x6E mask —
+none both fix I026 and avoid I027), the next candidate is testing whether
+reverting the firmware itself clears both incidents. Researched sourcing
+the exact prior version (1.42, `R2AET67W`) first:
+
+- Not offered by `fwupdmgr`/LVFS at all — `fwupdmgr get-releases` lists
+  downgrades at 0.1.39, 0.1.35, 0.1.34, 0.1.29, 0.1.27, 0.1.10 only, a
+  gap exactly where 1.42 should be.
+- Lenovo's own support pages and the `thinkpads.com` community BIOS
+  mirror both blocked automated fetch (403); a guessed direct filename
+  (`r2aet67w.txt`/`.html` on `download.lenovo.com`) 404'd. Consistent
+  with Lenovo's general practice of not archiving superseded BIOS
+  installers once a newer one is posted (per a Lenovo Community thread
+  found during research) — 1.42 is likely gone, not just hard to find.
+  Not exhaustively confirmed — the support page's own "Details"/history
+  section wasn't checked manually in a real browser, only via automated
+  fetch, which is bot-blocked independent of what the page contains.
+- Separately, some Lenovo BIOS lines enforce anti-rollback in firmware
+  itself ("Secure Rollback Prevention," confirmed as a real feature name
+  on other ThinkPad models' own support docs) — unconfirmed whether this
+  model's 1.42→1.43 boundary has it, but a real risk even if 1.42 were
+  found: the flash utility could simply refuse it.
+
+**Decision: proceed with `fwupdmgr downgrade` to 0.1.39 instead**, the
+closest available version, rather than continuing to chase 1.42. Trade-off
+accepted explicitly: this is not a clean single-variable test — 1.39 differs
+from 1.43 by more than just whatever changed in 1.40–1.42, so a clean
+result either way (fixed or not) doesn't isolate the exact regression the
+way testing 1.42 itself would have. It's still the best available signal
+without sourcing an unreleased/unarchived file. Command run by the user
+directly (not through the agent's `pkexec` pattern) per this repo's
+reversibility rule — firmware sits outside all three reversibility layers
+(`rpm-ostree rollback`, `etckeeper`, `/var/home` backups), so per
+`CLAUDE.md` it's proposed and typed by the human, not executed on their
+behalf.
+
 **Tally:** time-to-fix — same day (2026-08-25), root-caused and fix
 persisted across a reboot within one session · first proposal: right —
 `reset-triage`'s evidence collection plus the follow-up suspend-cycle
