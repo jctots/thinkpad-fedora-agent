@@ -457,3 +457,39 @@ driver-isolation candidates, if continuing this approach: `i8042`
 `thinkpad_acpi` itself (owns lid-switch ACPI event handling, but unloading
 it also loses fan/battery/backlight control — a blunt instrument, try
 last).
+
+**`PNP0C0E:00` (ACPI Sleep Button) ruled out, 2026-08-25.** Web research
+turned up a closely-matching case on a same-generation ThinkPad (T14 Gen 5
+AMD, via Nobuto Murata's blog) where spurious wakeup was traced to the
+`PNP0C0E:00` ACPI Sleep Button device having `power/wakeup` enabled,
+independent of the actual input device's own wakeup flag — fixed there via
+a udev rule setting `ATTR{power/wakeup}="disabled"`. This machine has the
+same device, also wakeup-enabled by default
+(`/sys/devices/platform/PNP0C0E:00/power/wakeup`). Tested live (no
+reboot): disabled via `pkexec bash -c 'echo disabled > .../power/wakeup'`,
+closed/opened the lid — thrash reproduced identically, 15 rapid ~0.99s
+cycles. Ruled out; wakeup re-enabled afterward (matches the device's
+default state, no reason to keep it disabled).
+
+**New data point: the bogus final "Timekeeping suspended" duration is
+reproducible, not random.** This cycle logged `7198.866` seconds on the
+settling cycle — essentially identical to the `7198.867` seconds seen on
+the very first 1.39 test (Bluetooth-on run also didn't show this value,
+worth checking if it's specific to certain cycle counts). Confirmed via
+`chronyc tracking` as a real clock skew again (`7197.9s fast of NTP`),
+corrected with `pkexec chronyc makestep`. The near-exact repeat across two
+separate occurrences suggests a fixed/deterministic garbage value coming
+from the EC or RTC read path during the thrash's settling transition,
+not a genuinely variable elapsed-time miscalculation — worth keeping in
+mind if this ever needs to be reported upstream, since it's a
+distinguishing, reproducible fingerprint of this specific bug.
+
+**Driver/device isolation tally so far:** NVIDIA (inactive, N/A) · Xbox
+controller (inactive, N/A) · Bluetooth (ruled out) · `PNP0C0E:00` ACPI
+Sleep Button (ruled out). Remaining: `i8042`/`thinkpad_acpi` (both
+blunter, higher-risk to test — see driver-isolation candidates note
+above).
+
+Sources consulted:
+- [How to prevent TrackPoint or touchpad events from waking up ThinkPad T14 Gen 5 AMD from suspend](https://nobuto-m.github.io/post/2025/how-to-prevent-trackpoint-events-from-waking-up-thinkpad-t14-gen-5-amd-from-suspend/)
+- [Bug #1960771 "Use EC GPE for s2idle wakeup on AMD platforms" — Ubuntu](https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1960771)
