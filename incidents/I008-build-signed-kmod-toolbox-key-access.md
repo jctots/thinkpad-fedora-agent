@@ -79,7 +79,35 @@ Verified end to end for both `nvidia` and `xpadneo` with the identical,
 unmodified script (only the `<kmod-name> <akmod-package>` args differ) —
 both produced signed RPMs, `sig_id: PKCS#7`, signer CN matching the
 enrolled MOK. Staged on the host via `rpm-ostree install` (both RPMs at
-once); not yet rebooted into.
+once), then booted into and confirmed the same day:
+
+- `rpm-ostree status` shows both as `LocalPackages` on the active (`●`)
+  deployment, same base commit as before the install — a pure overlay
+  change, no OS version bump.
+- `modinfo nvidia` and `modinfo hid-xpadneo` both report `sig_id: PKCS#7`
+  with `signer: fedora_1786956117_e9a2fc71`, matching the CN in
+  `mokutil --list-enrolled` exactly. The signing chain is trusted at
+  runtime, not just present on disk.
+- The Xbox controller pairs over Bluetooth and input works — confirmed
+  with the hardware in hand. This was the one part of the fix with no
+  dry-run equivalent from inside the toolbox.
+
+Two naming gotchas worth recording, since both produced false "not
+installed" readings during the post-reboot check:
+
+- The xpadneo **kernel module** is `hid-xpadneo`, not `xpadneo`. `modinfo
+  xpadneo` and `modprobe -n xpadneo` both fail with "not found" while the
+  module is present and fine at
+  `/usr/lib/modules/<kernel>/extra/xpadneo/hid-xpadneo.ko.xz`.
+- `rpm -q kmod-nvidia` reports "not installed" for rpm-ostree
+  `LocalPackages`. Use `rpm-ostree status` (or its `--json`
+  `requested-local-packages`) instead; the host rpmdb isn't the source of
+  truth on an atomic system.
+
+Neither module is resident in `lsmod` at rest: NVIDIA is deliberately
+blacklisted (I019, `gpu-toggle.sh`) and `hid-xpadneo` only autoloads when
+the controller actually connects. An empty `lsmod` here is not a
+regression.
 
 **Tried first:** Confirmed the failure was real (not a stale toolbox) by
 checking `toolbox list` (container present, last used ~24h earlier),
@@ -96,16 +124,21 @@ original transfer, so it needs a deliberate decision, not an improvised
 workaround mid-session.
 
 **Reversibility:** The 2026-08-17 investigation touched nothing (read-only).
-The 2026-08-25 fix: `rpm-ostree install` of the two signed kmods is a
-staged deployment, reversible by `rpm-ostree rollback` or simply not
-rebooting into it. The staged MOK key copy under `~/kmod-builds/.keystage`
-is `/var/home` — covered by backup — and deleted via `--cleanup` once done
-regardless. No `/etc` changes; the host's actual key material was only
-ever read, never modified or moved.
+The 2026-08-25 fix: `rpm-ostree install` of the two signed kmods created a
+staged deployment, reversible by not rebooting into it; now that it *is*
+booted, the prior deployment remains as the `rpm-ostree rollback` target.
+The install's `/etc` drift (nvidia-powerd unit, suspend/hibernate hook
+symlinks, `OpenCL/vendors/nvidia.icd`, SELinux policy cache) was committed
+by `etckeeper` post-reboot via `scripts/etc-drift.sh fix` — layer two
+covered. The staged MOK key copy under `~/kmod-builds/.keystage` is
+`/var/home` — covered by backup — and deleted via `--cleanup` once done
+regardless. The host's actual key material was only ever read, never
+modified or moved.
 
 **Captured in:** `scripts/build-signed-kmod.sh` (fixed) and
 `scripts/stage-mok-key.sh` (new). Verified working end to end for both
-`kmod-nvidia` and `kmod-xpadneo`.
+`kmod-nvidia` and `kmod-xpadneo`, through to booted-and-signed at
+runtime plus working controller input.
 
 **Tally:** time-to-fix (2026-08-25 resolution session) ~40m · first
 proposal: ✗ wrong — the staging-split design was right, but four more

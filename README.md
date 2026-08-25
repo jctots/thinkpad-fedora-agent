@@ -21,6 +21,26 @@ This project is the test.
 - 🚫 a deny list scoped to the irreversible, not to the privileged
 - 🖐️ manual approval throughout, and an audit log of every command
 
+## 🛡️ How the guardrails classify
+
+Privilege is not the axis. `sudo`, `rpm-ostree` and `systemctl` are the job.
+What gets denied is what no rollback, no `etckeeper` diff and no backup can
+undo.
+
+| Class | Examples | Rule |
+|---|---|---|
+| ⏪ Reversible by rollback | `rpm-ostree install/override/rebase`, `flatpak`, `systemctl`, `toolbox` | allow or ask |
+| ✍️ Reversible by hand | `/etc` edits, unit masking | ask — `etckeeper` makes each one a diff |
+| ⛔ Irreversible | `wipefs`, `mkfs.*`, `dd` to `/dev/*`, `cryptsetup luksFormat/luksErase`, destructive `sgdisk`/`parted`, `ostree admin undeploy` of the rollback target, `rm -rf` on `/sysroot` or `/var/home` | deny, always |
+
+On an atomic system this classification is checkable rather than a judgement
+call, which is what makes the whole arrangement defensible.
+
+The full account — where the ruleset came from, how it is enforced and proved,
+what it does *not* protect against, and who is allowed to change it — is in
+**[`docs/guardrails.md`](docs/guardrails.md)**. It is the most important
+document here after this one.
+
 ## 🧩 A worked example: driver churn across a kernel upgrade
 
 Abstract claims about reversibility are cheap. Here is one chain of real
@@ -56,52 +76,50 @@ kmods, then upgrade cleanly on top. `etckeeper` picked up the resulting
 `/etc` diff automatically; `rpm-ostree rollback` stayed available the
 entire time if the call had gone the other way.
 
-Nothing here required a clean install to fix. The whole arc — driver
-added, trade-off named up front, the same bug reused across two devices,
-the trade-off's cost eventually paid, the decision to pay it made
-in the open — is four files in [`incidents/`](incidents/index.md), each
-one linked from the next, still readable and still reversible today.
+Then the chain closed. Paying the cost made I008 worth fixing properly, so
+it was — the privileged key read moved out of the rootless container onto
+the host, which promptly exposed four more bugs in a script that had been
+written from I004/I006's notes but never actually run end to end. Both
+drivers rebuilt against the new kernel with the same unmodified script,
+signed, verified against the enrolled key, and booted the same day.
+
+Nothing here required a clean install, at any point. The whole arc is four
+files in [`incidents/`](incidents/index.md), each linked from the next,
+still readable and still reversible today. Note which part did the work:
+the write-up that recorded I008 as *unfixed* is what made it cheap to fix
+later. That is the mechanism, and it is the part that survives the agent
+being wrong — which, per the tally, it often is.
 
 ### Without the agent
 
-The `incidents/index.md` tally is measured — logged as it happened. This
-is not that; it's the counterfactual, argued rather than timed, for the
-same four-incident chain above. Take it as reasoning about where the time
-actually goes, not as a second data point.
+The tally in `incidents/index.md` is measured. This is not — it's the
+counterfactual for that same chain, argued rather than timed.
 
 | Step | With this project | Without it |
 |---|---|---|
-| Diagnose the unsigned-akmod build (I004) | Fixed and shown live in the terminal already running with real privilege; the finding is written to `incidents/I004` the moment it's confirmed | Paste the build error into a browser AI tab, copy back its guesses, run them by hand, paste results back for the next round — no execution access on that side, no record left behind once the tab closes |
-| Reuse the fix for the Xbox controller (I006), days later | `grep incidents/` or "same as I004?" turns the second diagnosis into a lookup | No link back to the earlier fix unless a human happened to keep their own notes; more likely, the identical bug gets re-diagnosed from scratch |
-| Name the pinning trade-off at the time it's made | Written into the incident file as part of landing the fix, not as an afterthought | Usually skipped under "just get it working" pressure — the trade-off only surfaces later, as a mystery, when the next kernel bump breaks and nobody remembers why |
-| Kernel bump blocks the upgrade, weeks later (I024) | Reads I008 directly, confirms the toolbox/MOK rebuild path is already known broken, decision made in one sitting with the trade-off already on record | Re-diagnoses the toolbox/MOK failure from scratch under time pressure from a blocked upgrade — the conditions that produce a rushed `--force` or a stray `rm -rf` instead of a clean uninstall |
-| Confirm the fix stuck (`etckeeper` commit, rollback still live) | Checked in the same sitting as a standing habit (`/etc-drift`, `rpm-ostree status`) | Depends on a human remembering to check, with nothing auditing whether they did |
+| Reuse I004's fix for the Xbox controller (I006), days later | `grep incidents/` turns the second diagnosis into a lookup | No link back unless a human kept their own notes; more likely the identical bug is re-diagnosed from scratch |
+| Name the pinning trade-off when it's made | Written into the incident file as part of landing the fix | Skipped under "just get it working" pressure — it resurfaces later as a mystery when the kernel bumps |
+| Kernel bump blocks the upgrade weeks later (I024) | Reads I008, confirms the rebuild path is already known broken, decides in one sitting | Re-diagnoses under time pressure — the conditions that produce a rushed `--force` instead of a clean uninstall |
 
 None of this requires the agent to reason better than a browser tab running
 the same model. The difference is that it holds the shell, the file
 history, and the incident record in the same place a human would otherwise
-be manually relaying between — so nothing has to be re-explained,
-re-pasted, or re-diagnosed from session to session.
+be relaying between by hand.
 
-## 🛡️ How the guardrails classify
+## 📊 Status
 
-Privilege is not the axis. `sudo`, `rpm-ostree` and `systemctl` are the job.
-What gets denied is what no rollback, no `etckeeper` diff and no backup can
-undo.
+Bootstrapped and active. The machine runs Fedora Silverblue, the agent has
+real privilege under the guardrail layer, and the fingerprint reader, TPM2
+disk auto-unlock, and package/extension manifests reflect real work rather
+than a plan. Scripts crystallise out of real use rather than being written up
+front, so expect [`incidents/`](incidents/index.md) to lead and `scripts/` to
+follow. A reinstall now starts from `docs/bootstrap.md` on an existing Fedora
+install, not from a different OS.
 
-| Class | Examples | Rule |
-|---|---|---|
-| ⏪ Reversible by rollback | `rpm-ostree install/override/rebase`, `flatpak`, `systemctl`, `toolbox` | allow or ask |
-| ✍️ Reversible by hand | `/etc` edits, unit masking | ask — `etckeeper` makes each one a diff |
-| ⛔ Irreversible | `wipefs`, `mkfs.*`, `dd` to `/dev/*`, `cryptsetup luksFormat/luksErase`, destructive `sgdisk`/`parted`, `ostree admin undeploy` of the rollback target, `rm -rf` on `/sysroot` or `/var/home` | deny, always |
-
-On an atomic system this classification is checkable rather than a judgement
-call, which is what makes the whole arrangement defensible.
-
-The full account — where the ruleset came from, how it is enforced and proved,
-what it does *not* protect against, and who is allowed to change it — is in
-**[`docs/guardrails.md`](docs/guardrails.md)**. It is the most important
-document here after this one.
+The incident index is also the project's own scoreboard: every entry records
+time-to-fix and whether the agent's first proposal was right — misses
+included, or the column would measure nothing. The bet at the top of this
+file is meant to be checkable against it.
 
 ## 🗂️ Layout
 
@@ -123,20 +141,6 @@ test/                  kickstart + VM harness
 docs/extras.md          optional private layer for fork-specific app installs
 ```
 
-## 📊 Status
-
-Bootstrapped and active. The machine runs Fedora Silverblue, the agent has
-real privilege under the guardrail layer, and the fingerprint reader, TPM2
-disk auto-unlock, and package/extension manifests reflect real work rather
-than a plan. Scripts crystallise out of real use rather than being written up
-front, so expect [`incidents/`](incidents/index.md) to lead and `scripts/` to
-follow. A reinstall now starts from `docs/bootstrap.md` on an existing Fedora
-install, not from a different OS.
-
-The incident index is also the project's own scoreboard: every entry records
-time-to-fix and whether the agent's first proposal was right. The claim above
-is meant to be checkable against it.
-
 ## Skills
 
 Reusable routines for recurring project chores, on top of the base
@@ -146,46 +150,28 @@ of waiting to be asked.
 
 | Skill | Does | Who invokes it |
 |---|---|---|
-| `/vendor-update` | Diffs each pinned commit in `VENDOR.md` against upstream, walks the Local Changes table, writes findings to `.claude/proposals/` | Human — no natural trigger event, occasional cadence |
-| `/incident` | Scaffolds `incidents/I{nnn}-{slug}.md` from the template and inserts the index row | Agent, proactively, right after a fix lands — except the ✓/✗ first-proposal tally, always asked, never guessed |
-| `/host-check` | Runs every report-only script (`scripts/*.sh`, `hosts/<slug>/*.sh`) and summarizes ok/missing | Agent, freely — read-only execution of scripts already guaranteed idempotent |
-| `/etc-drift` | Checks `etckeeper` actually committed the last `/etc` change | Agent for the check; human approves the shown `etckeeper commit` if one's needed |
-| `/handover` | Snapshots session state to `.claude/handover.md` before a reboot-triggering action, and reads it back in on the next session | Agent, proactively — already standing practice, this just formalizes it |
-| `/update-check` | Reports OS image staleness (`rpm-ostree upgrade --check`) and drift across both flatpak manifests (public + private extras) — current/outdated/missing, never runs the upgrade itself | Agent for the check; human approves the shown `rpm-ostree upgrade` or `flatpak update` if one's needed |
-| `/reset-triage` | On every session start, checks whether the previous boot ended uncleanly (`last -x` crash marker) and, if so, surfaces a standard evidence bundle (`journalctl -b -1 -k` tail, `pm_trace` hash-match, boot timestamps) unprompted; silent otherwise | Agent, proactively, chained off `/handover`'s read-mode |
-| `/security-privacy-check` | Runs a Lynis hardening audit (via `pkexec`, report-only) plus GNOME privacy settings, location services, and Flatpak per-app permission overrides; saves each run to `.claude/security-reports/` (gitignored) | Agent, freely — read-only, never installs or changes a setting |
+| `/host-check` | Runs every report-only script and summarizes ok/missing | Agent, freely |
+| `/update-check` | Reports OS image staleness and drift across both flatpak manifests — never runs the upgrade itself | Agent for the check, human approves the upgrade |
+| `/etc-drift` | Checks `etckeeper` actually committed the last `/etc` change | Agent for the check, human approves the commit |
+| `/reset-triage` | Detects an unclean prior boot and surfaces an evidence bundle unprompted; silent otherwise | Agent, chained off `/handover`'s read-mode |
+| `/end-session` | Wraps up: decides whether a reboot is actually pending, delegates to `/handover` if so, saves anything memory-worthy | Human, at session end — the one command to reach for |
+| `/handover` | Snapshots session state before a reboot-triggering action, reads it back on the next session | Agent, proactively (or via `/end-session`) |
+| `/incident` | Scaffolds an incident file and its index row | Agent, right after a fix lands — except the ✓/✗ tally, always asked |
+| `/security-privacy-check` | Lynis hardening audit plus GNOME privacy and Flatpak permission overrides | Agent, freely |
+| `/vendor-update` | Diffs each pinned commit in `VENDOR.md` against upstream, writes findings to `.claude/proposals/` | Human — occasional cadence |
 
 The dividing line isn't privilege, same as the guardrails themselves: it's
 whether a step is read-only/reversible-by-git (agent runs it unasked) or a
-real system mutation (shown as a command, human approves), per CLAUDE.md's
-working rules.
+real system mutation (shown as a command, human approves). Each skill's
+full contract is in its own `.claude/skills/<name>/SKILL.md`.
 
-### Crash/hang forensics
-
-Recurring lockups, panics, and hard resets are handled as a standing
-capability, not reinvented per-bug (see decision D33 in the project vault).
-Three layers, sorted by actual idle cost rather than by which investigation
-introduced them:
-
-- **Baseline sensors** — `pm_trace` (pstore), the sysrq bitmask, and
-  `pm_debug_messages` stay armed permanently; each costs effectively
-  nothing at idle, and unlike a reactive check, they've already captured
-  evidence by the time anyone knows a crash happened. The journald sync
-  interval joins this layer too, tuned to a loose, host-profile-tunable
-  default rather than the aggressive value an active investigation might
-  need.
-- **`/reset-triage`** — reactive and generic: detects an unclean prior boot
-  on session start and reports a standard evidence bundle, regardless of
-  which subsystem broke.
-- **Case-specific escalation** — heavier, bug-specific instrumentation
-  (targeted kernel args, a tightened sync interval) stays scoped to one
-  open incident, armed deliberately and reverted when it's fixed — this is
-  where the current s2idle resume-hang scaffolding in
-  `hosts/thinkpad-e14-gen5/quirks.sh` lives.
-
-Pinned to `hosts/thinkpad-e14-gen5/` for now; promotion to the generic
-`scripts/` layer waits for a second host to validate the sensor set
-against.
+Crash forensics is layered by idle cost rather than by which bug
+introduced it: permanent sensors (`pm_trace`, sysrq bitmask,
+`pm_debug_messages`) stay armed because they cost nothing and have already
+captured evidence by the time anyone knows a crash happened;
+`/reset-triage` is the generic reactive check; bug-specific instrumentation
+stays scoped to one open incident and is reverted when it closes. Pinned to
+`hosts/thinkpad-e14-gen5/` until a second host can validate the sensor set.
 
 ## ❓ FAQ
 

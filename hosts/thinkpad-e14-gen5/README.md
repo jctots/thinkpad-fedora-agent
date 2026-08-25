@@ -56,16 +56,22 @@ and re-added the same day once [I008](../../incidents/I008-build-signed-kmod-too
 (toolbox couldn't read the host's MOK key) was actually fixed —
 `scripts/stage-mok-key.sh` now stages the key on the host first, outside
 the toolbox's rootless permission boundary, and `scripts/build-signed-kmod.sh`
-reads from there. A freshly built, signed `kmod-nvidia` is **staged via
-`rpm-ostree install`, not yet booted into** — `rpm-ostree status` will show
-it as the pending deployment until the next reboot. Until that reboot, the
-machine is still running on `nouveau` as described in I024. `xorg-x11-drv-nvidia-cuda`
-was not part of the I008 fix and remains uninstalled — re-add separately
-if CUDA is needed again.
+reads from there. The rebuilt, signed `kmod-nvidia` is **booted and
+verified** — it's a `LocalPackage` on the active deployment, and `modinfo
+nvidia` reports `sig_id: PKCS#7` with a signer CN matching
+`mokutil --list-enrolled`. `xorg-x11-drv-nvidia-cuda` was not part of the
+I008 fix and remains uninstalled — re-add separately if CUDA is needed
+again.
+
+The module is present and trusted but **not loaded**: the dGPU stays
+disabled by default per [I019](../../incidents/I019-nvidia-suspend-fix-caused-retry-loop-battery-drain.md)
+(see the toggle section below), so `lsmod | grep nvidia` is empty and
+`nvidia-smi` reports no device until `gpu-toggle.sh enable`. That's the
+intended resting state, not a broken driver.
 
 ```
 00:02.0 VGA compatible controller: Intel Corporation Raptor Lake-P [Iris Xe Graphics] — driver i915/xe
-02:00.0 3D controller: NVIDIA Corporation TU117M [GeForce MX550] — driver nouveau until reboot, then pinned kmod-nvidia (I008)
+02:00.0 3D controller: NVIDIA Corporation TU117M [GeForce MX550] — pinned kmod-nvidia (I008), unloaded by default (I019)
 ```
 
 Confirmed 2026-08-17: the dGPU worked out of the box on the in-tree open
@@ -94,11 +100,24 @@ not a race: [I004](../../incidents/I004-nvidia-akmod-unsigned-in-rpm-ostree-post
 **What's actually running:** a `kmod-nvidia` package built and signed
 *outside* the sandbox — in a `toolbox` container, using the same MOK key,
 matched to the exact kernel version — then layered as an rpm-ostree
-`LocalPackage`. See `quirks.sh` for the full rebuild procedure and the
-package list. **Accepted trade-off:** this does not auto-rebuild on kernel
-updates the way `akmod-nvidia` would. The next `rpm-ostree upgrade` that
-bumps the kernel will leave this driver stale until the toolbox build is
-redone for the new kernel — `quirks.sh` detects and reports this mismatch
+`LocalPackage`. See `quirks.sh` for the package list.
+
+**Rebuilding after a kernel bump** is now scripted end to end (I008), and
+is the same two commands for either kmod:
+
+```
+scripts/stage-mok-key.sh                          # pkexec, host-side key read
+scripts/build-signed-kmod.sh nvidia  akmod-nvidia
+scripts/build-signed-kmod.sh xpadneo akmod-xpadneo
+scripts/stage-mok-key.sh --cleanup                # remove the staged key
+```
+
+**Accepted trade-off:** this still does not auto-rebuild on kernel updates
+the way `akmod-nvidia` would — the rebuild is scripted, not automatic. An
+`rpm-ostree upgrade` that bumps the kernel will **fail to depsolve** while
+the old pins are installed ([I024](../../incidents/I024-pinned-kmod-blocked-upgrade-dropped-nvidia-xpadneo.md)),
+so the order is: uninstall the pins, upgrade, reboot, then rebuild against
+the new kernel and re-install. `quirks.sh` detects and reports a stale pin
 explicitly rather than silently falling back to nouveau. To abandon the
 proprietary driver entirely instead of redoing the build:
 `sudo rpm-ostree uninstall kmod-nvidia-<version> xorg-x11-drv-nvidia-cuda`
@@ -202,9 +221,15 @@ re-built and re-staged the same day once
 [I008](../../incidents/I008-build-signed-kmod-toolbox-key-access.md) was
 fixed — same `stage-mok-key.sh`/`build-signed-kmod.sh` run that rebuilt
 NVIDIA, same underlying MOK key, no controller-specific step needed beyond
-the `<kmod-name> <akmod-package>` args. **Staged via `rpm-ostree install`,
-not yet booted into** — the controller has no driver support until the
-next reboot.
+the `<kmod-name> <akmod-package>` args. **Booted and confirmed working** —
+the controller pairs over Bluetooth and input works, tested with the
+hardware in hand.
+
+Note the module is named **`hid-xpadneo`**, not `xpadneo` — `modinfo
+xpadneo` reports "not found" while the module is perfectly fine at
+`/usr/lib/modules/<kernel>/extra/xpadneo/hid-xpadneo.ko.xz`. It's also not
+resident in `lsmod` unless the controller is actually connected, since it
+autoloads on connect.
 
 ```
 Bus=0005 Vendor=045e Product=028e — Xbox Wireless Controller (BT)
