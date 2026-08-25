@@ -213,7 +213,31 @@ isolates the C-state variable alone if left on the same power source as
 one of those, or stacks both untested variables if run on battery
 overnight — worth deciding deliberately, not by default.
 
-**Fix:** none yet — open investigation.
+**Repro attempt — 2026-08-25 11:32–12:27 (~55m), AC + uncapped C-states:**
+16 cycles, 60–300s asleep/45s awake gap. Confirmed before launch: dGPU not
+loaded, `AC=1` throughout, and `/proc/cmdline` no longer carries
+`processor.max_cstate=1` (the delete staged 2026-08-24 had since taken
+effect over an intervening reboot) with `/sys/module/intel_idle/parameters/max_cstate`
+reading `9` (uncapped) — so this was the AC-side half of the
+previously-staged uncapped-C-state baseline. All 16 cycles resumed
+cleanly — `completed all 16 cycles without a hang` in
+`journalctl -t suspend-repro-loop`. No recurrence. Matrix so far: AC+capped
+(32 cycles, 2026-08-24), battery+capped (16 cycles, 2026-08-24), AC+uncapped
+(16 cycles, this run) all clean. **Battery+uncapped is the one remaining
+untested cell.**
+
+**Repro attempt — 2026-08-25 13:14–13:28 (~14m, cancelled by user), battery +
+uncapped C-states:** Launched to fill the last untested matrix cell
+(battery power + `processor.max_cstate` cap removed). Confirmed before
+launch: dGPU not loaded, `AC=0`/`batt=68%`, uncapped C-state still active
+from the prior run. User cancelled partway through; the outer task-tracker
+kill only stopped the unprivileged wrapper shell, not the actual
+root-owned script process (pkexec-launched, PID persisted past the tracked
+task) — had to `pkexec kill -TERM` it directly to actually stop the loop.
+5 of 16 cycles completed before cancellation, all resumed cleanly (68%→65%
+battery, AC=0 confirmed at every snapshot) — no hang in the partial run.
+Battery+uncapped remains the only matrix cell without a full-length clean
+run; worth re-running to completion when convenient.
 
 **Tried first:** `reset-triage` flagged the crash and collected the
 standard evidence bundle (boot list, kernel log tail, `pm_trace` hash on

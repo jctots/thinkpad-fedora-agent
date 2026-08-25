@@ -23,6 +23,7 @@ Update both in the same commit as the install that satisfies an entry.
 | `lynis` | 2026-08-19 | Security audit engine behind `scripts/security-privacy-check.sh` / the `security-privacy-check` skill. In Fedora's official repos, so a plain layered install — chose reuse over hand-writing hardening checks (boot/kernel, SELinux, SSH, cron, file integrity) per CLAUDE.md's prior-art rule. Needs root and host-level state (kernel params, boot config, SELinux) to produce a meaningful audit, which rules out running it from a toolbox — a container's view of those doesn't reflect the host. Its filesystem/boot checks assume a traditional (non-ostree) layout and can throw findings specific to that mismatch; `security-privacy-check.sh` flags this rather than treating every finding as actionable |
 | `v4l-utils` | 2026-08-18 | UVC camera diagnostics/controls (`v4l2-ctl`, `qv4l2`) — generic tool for any video-capture device, no host-specific quirk involved |
 | `nodejs` | 2026-08-18 | `node`/`npm`/`npx` — general JS tooling dependency (MCP servers, CLIs), also needed by the `ccusage-indicator` GNOME extension trialled below |
+| `powertop` | 2026-08-25 (I026) | Ranks ACPI wakeup sources by frequency — installed to diagnose I026's spurious EC GPE wake-thrash draining the battery on suspend. Needs root and direct hardware/ACPI access, so layered rather than a toolbox/Flatpak; generic power diagnostic, not specific to this host despite the trigger being host-specific |
 
 ## Flatpaks
 
