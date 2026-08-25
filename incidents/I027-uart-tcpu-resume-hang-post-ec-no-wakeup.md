@@ -258,3 +258,19 @@ n/a — agent unavailable (hang happened with no session running); this
 occurrence also falsifies the user's own workaround hypothesis, not an
 agent proposal — recorded here since CLAUDE.md asks the tally to count
 misses generally, not just the agent's own.
+
+**Test result, 2026-08-25 — first supervised cycle on BIOS 1.39 did not
+reproduce the hang.** After downgrading firmware to test the 1.42→1.43
+regression theory (see I026's "Decision, 2026-08-25" and "Test result,
+2026-08-25" sections), one supervised lid-close/open cycle on 1.39
+completed a full resume — `systemd-logind` logged `Operation 'suspend'
+finished.` and `Lid opened.`, no dead-log signature. Not treated as a fix:
+this incident's own occurrences have never been reliably reproduced
+on-demand (four occurrences across unattended soak conditions, not single
+supervised closes), so one clean single-cycle result on 1.39 has no more
+weight than any of the clean cycles that happened between prior
+occurrences under 1.43. Needs an actual unattended multi-cycle soak
+(per the standing next-step note above) before 1.39 can be credited or
+ruled out for this incident specifically — unlike I026, where the thrash
+signature reproduced immediately and firmware was cleanly ruled out as a
+fix for *that* incident on the first cycle.

@@ -393,3 +393,39 @@ persisted across a reboot within one session · first proposal: right —
 count and timeline correctly identified the wake-thrash mechanism (as
 opposed to a hang) on the first pass, and correctly distinguished it from
 I021 rather than conflating the two.
+
+**Test result, 2026-08-25 (same day) — BIOS 1.39 does NOT fix this:**
+Flash to 0.1.39 confirmed applied (`bios_version` → `R2AET64W(1.39)`,
+`fwupdmgr get-history` shows a clean 1.43→1.39 downgrade), reboot clean
+(`reset-triage`: no crash), both EC kargs (`acpi.ec_no_wakeup`,
+`ec_intr`) confirmed absent from `/proc/cmdline` so firmware was the only
+variable under test. First supervised lid-close/open cycle post-downgrade
+reproduced the exact same thrash signature as under 1.43: **57 rapid
+suspend/resume cycles** (each `PM: suspend entry` → `Timekeeping
+suspended for ~0.99 seconds` → immediate `ACPI: EC: ACPI EC GPE
+dispatched` → resume), all logged under one wall-clock second, before
+settling into what should have been the real held suspend.
+
+New wrinkle, not seen in earlier occurrences: the final "real" suspend
+before the actual `Lid opened` reported `Timekeeping suspended for
+7198.867 seconds` (~2 hours) in the kernel log, but `journalctl
+--list-boots` shows this boot started at 21:32:16 and the resume happened
+at 21:36:28 — only ~4 minutes of real wall-clock time, and the whole
+lid-close-to-open interaction was seconds, not hours. The reported
+suspend duration is bogus, not a real elapsed time. Given the thrash's
+GPE dispatch is clearly re-triggering itself dozens of times per second,
+something in that path is also corrupting the RTC-derived duration
+calculation on the settling cycle — a related but previously unrecorded
+symptom, distinct from the already-known `pm_trace`-writes-bogus-RTC
+issue (I017), since `pm_trace` was confirmed at 0 (off) for this boot.
+
+**Conclusion:** firmware version is not the root cause, or at least 1.39
+doesn't clear it — ruling out the 1.42→1.43 regression theory as the
+*sole* explanation (see I026/I027 cross-reference). Downgrade does not
+need to be reverted on its own account (no new regression observed from
+being on 1.39 itself), but it did not buy anything for this
+investigation. Next candidate should return to a variable not yet
+isolated cleanly — `processor.max_cstate=1` (already used for I021, not
+yet tried in combination with this thrash) or accepting a kernel-level EC
+driver quirk/patch as the likely fix surface instead of firmware or GPE
+config.
