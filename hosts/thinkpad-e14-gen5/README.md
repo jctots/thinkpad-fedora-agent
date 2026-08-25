@@ -50,22 +50,22 @@ so out loud first, separately from the rest of the fingerprint setup.
 
 ## GPU: Intel Iris Xe (iGPU) + NVIDIA MX550 (dGPU), Optimus/hybrid
 
-**Status as of 2026-08-25 ([I024](../../incidents/I024-pinned-kmod-blocked-upgrade-dropped-nvidia-xpadneo.md)):
-`kmod-nvidia` and `xorg-x11-drv-nvidia-cuda` are uninstalled.** The pinned
-kmod blocked an `rpm-ostree upgrade` depsolve against a new kernel, and
-I008 (toolbox can't read the host's MOK key to rebuild it) remains
-unresolved, so the proprietary driver was dropped rather than fixed under
-upgrade pressure. The machine now runs on the in-tree open `nouveau`
-driver, same as it did before the proprietary driver was ever added below
-— dGPU was already disabled by default (I019) so this is not a functional
-regression today. `nvidia-smi`/`nvtop` visibility and CUDA are gone until
-I008 is solved and the driver is re-added. The rest of this section is
-kept as historical record of the proprietary-driver setup and its
-trade-offs, for whenever it's re-added.
+**Status as of 2026-08-25:** `kmod-nvidia` was dropped when a pinned build
+blocked an OS upgrade ([I024](../../incidents/I024-pinned-kmod-blocked-upgrade-dropped-nvidia-xpadneo.md)),
+and re-added the same day once [I008](../../incidents/I008-build-signed-kmod-toolbox-key-access.md)
+(toolbox couldn't read the host's MOK key) was actually fixed —
+`scripts/stage-mok-key.sh` now stages the key on the host first, outside
+the toolbox's rootless permission boundary, and `scripts/build-signed-kmod.sh`
+reads from there. A freshly built, signed `kmod-nvidia` is **staged via
+`rpm-ostree install`, not yet booted into** — `rpm-ostree status` will show
+it as the pending deployment until the next reboot. Until that reboot, the
+machine is still running on `nouveau` as described in I024. `xorg-x11-drv-nvidia-cuda`
+was not part of the I008 fix and remains uninstalled — re-add separately
+if CUDA is needed again.
 
 ```
 00:02.0 VGA compatible controller: Intel Corporation Raptor Lake-P [Iris Xe Graphics] — driver i915/xe
-02:00.0 3D controller: NVIDIA Corporation TU117M [GeForce MX550] — driver nouveau (kmod-nvidia removed, see I024 above)
+02:00.0 3D controller: NVIDIA Corporation TU117M [GeForce MX550] — driver nouveau until reboot, then pinned kmod-nvidia (I008)
 ```
 
 Confirmed 2026-08-17: the dGPU worked out of the box on the in-tree open
@@ -196,13 +196,15 @@ intent, `quirks.sh` for whether the driver stack itself is intact.
 
 ## Xbox Wireless Controller (Bluetooth): two stacked bugs, both now fixed
 
-**Status as of 2026-08-25 ([I024](../../incidents/I024-pinned-kmod-blocked-upgrade-dropped-nvidia-xpadneo.md)):
-`kmod-xpadneo` is uninstalled**, dropped alongside `kmod-nvidia` for the
-same reason (pinned to an old kernel build, blocked `rpm-ostree upgrade`
-depsolve, I008 toolbox rebuild unresolved). The controller has no driver
-support until `kmod-xpadneo` is rebuilt and re-added — `hid-generic` will
-again reject its descriptor as described below. The rest of this section
-is kept as historical record of the fix, for whenever it's re-added.
+**Status as of 2026-08-25:** dropped alongside `kmod-nvidia`
+([I024](../../incidents/I024-pinned-kmod-blocked-upgrade-dropped-nvidia-xpadneo.md)),
+re-built and re-staged the same day once
+[I008](../../incidents/I008-build-signed-kmod-toolbox-key-access.md) was
+fixed — same `stage-mok-key.sh`/`build-signed-kmod.sh` run that rebuilt
+NVIDIA, same underlying MOK key, no controller-specific step needed beyond
+the `<kmod-name> <akmod-package>` args. **Staged via `rpm-ostree install`,
+not yet booted into** — the controller has no driver support until the
+next reboot.
 
 ```
 Bus=0005 Vendor=045e Product=028e — Xbox Wireless Controller (BT)

@@ -38,7 +38,48 @@ the original I004/I006 manual builds — it wasn't scripted, and git history
 has no trace of the transfer step, only its result (a working signed
 `kmod-nvidia`/`kmod-xpadneo`).
 
-**Fix:** Not applied yet — see below.
+**Fix (resolved 2026-08-25):** Split the privileged read out of the
+toolbox entirely — the only process that can actually read
+`/etc/pki/akmods/private` is a real host process, so it has to happen on
+the host, before the toolbox build starts.
+
+New `scripts/stage-mok-key.sh`, run on the bare host: `pkexec` copies
+`/etc/pki/akmods/{private/private_key.priv,certs/public_key.der}` into
+`~/kmod-builds/.keystage`, owned by the invoking user, mode 0600/0644.
+Every toolbox container already bind-mounts `$HOME` by default, so the
+staged copy is visible inside without any extra wiring.
+`build-signed-kmod.sh` now reads the key from that staged path instead of
+`/etc/pki/akmods` directly — a plain user-owned file, no `sudo` needed for
+that specific read. `stage-mok-key.sh --cleanup` removes the staged copy
+once all builds for the session are done.
+
+Fixing just the key-read surfaced four more bugs in
+`build-signed-kmod.sh` that had never actually been exercised end to end
+(see the caveat this file itself carried: "do not treat the script as
+working until this is resolved and re-tested"):
+
+1. `kernel-devel` alone doesn't create the
+   `/usr/lib/modules/<kernel>/build` symlink `akmods` needs — that step
+   was done by hand in the original I004/I006 builds and never scripted.
+   Now created explicitly if missing.
+2. The script's own usage docs named the wrong package
+   (`xorg-x11-drv-nvidia-kmodsrc`, which never registers with `akmods` at
+   all — only a real `akmod-*` package does). Corrected to `akmod-nvidia`.
+3. `akmods` itself needs to run as root (missing `sudo`), and
+   `/var/cache/akmods` (mode 0750, owned `akmods:akmods`) isn't readable
+   by the invoking user at all — every `find`/copy of the build output now
+   goes through `sudo`.
+4. The signature-verification grep looked for the literal string
+   `signer.*akmods`, which never appears — the signer field is the MOK's
+   own CN (e.g. `fedora_1786956117_e9a2fc71`). Fixed to check for the
+   presence of `sig_id`/`signer` lines instead, and confirmed the CN
+   matches the enrolled key via `mokutil --list-enrolled`.
+
+Verified end to end for both `nvidia` and `xpadneo` with the identical,
+unmodified script (only the `<kmod-name> <akmod-package>` args differ) —
+both produced signed RPMs, `sig_id: PKCS#7`, signer CN matching the
+enrolled MOK. Staged on the host via `rpm-ostree install` (both RPMs at
+once); not yet rebooted into.
 
 **Tried first:** Confirmed the failure was real (not a stale toolbox) by
 checking `toolbox list` (container present, last used ~24h earlier),
@@ -54,15 +95,22 @@ signing key material and there's no documented source of truth for the
 original transfer, so it needs a deliberate decision, not an improvised
 workaround mid-session.
 
-**Reversibility:** None of this touched the system — read-only
-investigation inside a disposable toolbox container plus `stat`/`find` on
-the host. No `/etc` or rpm-ostree state changed.
+**Reversibility:** The 2026-08-17 investigation touched nothing (read-only).
+The 2026-08-25 fix: `rpm-ostree install` of the two signed kmods is a
+staged deployment, reversible by `rpm-ostree rollback` or simply not
+rebooting into it. The staged MOK key copy under `~/kmod-builds/.keystage`
+is `/var/home` — covered by backup — and deleted via `--cleanup` once done
+regardless. No `/etc` changes; the host's actual key material was only
+ever read, never modified or moved.
 
-**Captured in:** `scripts/build-signed-kmod.sh` — the bug is IN the script,
-not yet fixed there. Do not treat the script as working until this is
-resolved and re-tested end to end.
+**Captured in:** `scripts/build-signed-kmod.sh` (fixed) and
+`scripts/stage-mok-key.sh` (new). Verified working end to end for both
+`kmod-nvidia` and `kmod-xpadneo`.
 
-**Tally:** time-to-fix — unresolved (stopped deliberately mid-session, not
-agent unavailability) · first proposal: ✗ wrong — the script assumed a
-`sudo`-inside-toolbox read of `/etc/pki/akmods/private` would work,
-untested until this run.
+**Tally:** time-to-fix (2026-08-25 resolution session) ~40m · first
+proposal: ✗ wrong — the staging-split design was right, but four more
+bugs in the untested tail of the script (module-dir symlink, wrong
+package name, missing `sudo` on `akmods`/`find`, wrong signature grep)
+surfaced only by actually running it, one at a time. Original 2026-08-17
+diagnosis session: time-to-fix unresolved (stopped deliberately, not
+agent unavailability) · first proposal: ✗ wrong.
