@@ -51,14 +51,30 @@ if grep -q '^nvidia ' /proc/modules; then
   exit 1
 fi
 
+# Added for I021's AC-vs-battery / deep-C-state bisection (2026-08-24):
+# snapshot power source and cpu0 C-state residency counters around each
+# cycle. cpu0 only, not all CPUs — representative sample, keeps each log
+# line short. This is read-only (sysfs reads), no system state changed.
+log_pm_snapshot() {
+  local label="$1" ac batt cstates=""
+  ac=$(cat /sys/class/power_supply/AC*/online 2>/dev/null | head -1)
+  batt=$(cat /sys/class/power_supply/BAT*/capacity 2>/dev/null | head -1)
+  for d in /sys/devices/system/cpu/cpu0/cpuidle/state*/; do
+    cstates+="$(cat "$d/name" 2>/dev/null)=$(cat "$d/usage" 2>/dev/null) "
+  done
+  logger -t suspend-repro-loop "$label: AC=${ac:-?} batt=${batt:-?}% cpu0-cstate-usage: ${cstates}"
+}
+
 logger -t suspend-repro-loop "starting: cycles=$CYCLES min=${MIN_SLEEP}s max=${MAX_SLEEP}s gap=${AWAKE_GAP}s"
 
 for i in $(seq 1 "$CYCLES"); do
   dur=$(( RANDOM % (MAX_SLEEP - MIN_SLEEP + 1) + MIN_SLEEP ))
   logger -t suspend-repro-loop "cycle $i/$CYCLES: suspending for ${dur}s"
+  log_pm_snapshot "cycle $i/$CYCLES: pre-suspend"
   rtcwake -m no -s "$dur" >/dev/null
   systemctl suspend
   logger -t suspend-repro-loop "cycle $i/$CYCLES: resumed cleanly"
+  log_pm_snapshot "cycle $i/$CYCLES: post-resume"
   sleep "$AWAKE_GAP"
 done
 

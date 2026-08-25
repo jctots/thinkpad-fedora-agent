@@ -50,9 +50,22 @@ so out loud first, separately from the rest of the fingerprint setup.
 
 ## GPU: Intel Iris Xe (iGPU) + NVIDIA MX550 (dGPU), Optimus/hybrid
 
+**Status as of 2026-08-25 ([I024](../../incidents/I024-pinned-kmod-blocked-upgrade-dropped-nvidia-xpadneo.md)):
+`kmod-nvidia` and `xorg-x11-drv-nvidia-cuda` are uninstalled.** The pinned
+kmod blocked an `rpm-ostree upgrade` depsolve against a new kernel, and
+I008 (toolbox can't read the host's MOK key to rebuild it) remains
+unresolved, so the proprietary driver was dropped rather than fixed under
+upgrade pressure. The machine now runs on the in-tree open `nouveau`
+driver, same as it did before the proprietary driver was ever added below
+— dGPU was already disabled by default (I019) so this is not a functional
+regression today. `nvidia-smi`/`nvtop` visibility and CUDA are gone until
+I008 is solved and the driver is re-added. The rest of this section is
+kept as historical record of the proprietary-driver setup and its
+trade-offs, for whenever it's re-added.
+
 ```
 00:02.0 VGA compatible controller: Intel Corporation Raptor Lake-P [Iris Xe Graphics] — driver i915/xe
-02:00.0 3D controller: NVIDIA Corporation TU117M [GeForce MX550] — driver nvidia (pinned kmod-nvidia, see below)
+02:00.0 3D controller: NVIDIA Corporation TU117M [GeForce MX550] — driver nouveau (kmod-nvidia removed, see I024 above)
 ```
 
 Confirmed 2026-08-17: the dGPU worked out of the box on the in-tree open
@@ -182,6 +195,14 @@ disabled — the toggle's `status` output is the source of truth for current
 intent, `quirks.sh` for whether the driver stack itself is intact.
 
 ## Xbox Wireless Controller (Bluetooth): two stacked bugs, both now fixed
+
+**Status as of 2026-08-25 ([I024](../../incidents/I024-pinned-kmod-blocked-upgrade-dropped-nvidia-xpadneo.md)):
+`kmod-xpadneo` is uninstalled**, dropped alongside `kmod-nvidia` for the
+same reason (pinned to an old kernel build, blocked `rpm-ostree upgrade`
+depsolve, I008 toolbox rebuild unresolved). The controller has no driver
+support until `kmod-xpadneo` is rebuilt and re-added — `hid-generic` will
+again reject its descriptor as described below. The rest of this section
+is kept as historical record of the fix, for whenever it's re-added.
 
 ```
 Bus=0005 Vendor=045e Product=028e — Xbox Wireless Controller (BT)

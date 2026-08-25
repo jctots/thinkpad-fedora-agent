@@ -21,6 +21,68 @@ This project is the test.
 - 🚫 a deny list scoped to the irreversible, not to the privileged
 - 🖐️ manual approval throughout, and an audit log of every command
 
+## 🧩 A worked example: driver churn across a kernel upgrade
+
+Abstract claims about reversibility are cheap. Here is one chain of real
+incidents, each one checkable against its own file.
+
+Wanted the proprietary NVIDIA driver for one specific reason — `nvtop`/
+`nvidia-smi` visibility, which the in-tree `nouveau` driver can't provide.
+RPM Fusion's `akmod-nvidia` built unsigned inside rpm-ostree's layering
+sandbox regardless of a correctly enrolled Secure Boot key
+([I004](incidents/I004-nvidia-akmod-unsigned-in-rpm-ostree-post-sandbox.md)).
+Worked around it: build and sign `kmod-nvidia` in a `toolbox` container
+instead, pin it as an `rpm-ostree` `LocalPackage` matched to the exact
+kernel build — and write down, at the time, the trade-off that pinning
+implies: no auto-rebuild on the next kernel bump. The same signing bug hit
+the Xbox controller's Bluetooth driver a few days later
+([I006](incidents/I006-xpadneo-unsigned-akmod-and-truncated-descriptor-firmware.md))
+and got the identical fix, because the first write-up made the second
+diagnosis a lookup instead of a re-investigation.
+
+The pinning trade-off wasn't hypothetical. Rebuilding the kmod from inside
+`toolbox` turned out to be broken too — it can't read the host's MOK
+private key
+([I008](incidents/I008-build-signed-kmod-toolbox-key-access.md)) —
+and that got recorded as an open, unresolved incident rather than quietly
+patched over or left undocumented. Weeks later, an OS upgrade landed on a
+new kernel and the pinned kmods blocked it outright: `rpm-ostree upgrade`
+failed to depsolve, and the chained `&& systemctl reboot` never fired, so
+the machine sat untouched rather than half-upgraded
+([I024](incidents/I024-pinned-kmod-blocked-upgrade-dropped-nvidia-xpadneo.md)).
+With I008 still open, the choice was drop the driver or block the upgrade
+— made explicitly, by the human, in the moment: uninstall the pinned
+kmods, then upgrade cleanly on top. `etckeeper` picked up the resulting
+`/etc` diff automatically; `rpm-ostree rollback` stayed available the
+entire time if the call had gone the other way.
+
+Nothing here required a clean install to fix. The whole arc — driver
+added, trade-off named up front, the same bug reused across two devices,
+the trade-off's cost eventually paid, the decision to pay it made
+in the open — is four files in [`incidents/`](incidents/index.md), each
+one linked from the next, still readable and still reversible today.
+
+### Without the agent
+
+The `incidents/index.md` tally is measured — logged as it happened. This
+is not that; it's the counterfactual, argued rather than timed, for the
+same four-incident chain above. Take it as reasoning about where the time
+actually goes, not as a second data point.
+
+| Step | With this project | Without it |
+|---|---|---|
+| Diagnose the unsigned-akmod build (I004) | Fixed and shown live in the terminal already running with real privilege; the finding is written to `incidents/I004` the moment it's confirmed | Paste the build error into a browser AI tab, copy back its guesses, run them by hand, paste results back for the next round — no execution access on that side, no record left behind once the tab closes |
+| Reuse the fix for the Xbox controller (I006), days later | `grep incidents/` or "same as I004?" turns the second diagnosis into a lookup | No link back to the earlier fix unless a human happened to keep their own notes; more likely, the identical bug gets re-diagnosed from scratch |
+| Name the pinning trade-off at the time it's made | Written into the incident file as part of landing the fix, not as an afterthought | Usually skipped under "just get it working" pressure — the trade-off only surfaces later, as a mystery, when the next kernel bump breaks and nobody remembers why |
+| Kernel bump blocks the upgrade, weeks later (I024) | Reads I008 directly, confirms the toolbox/MOK rebuild path is already known broken, decision made in one sitting with the trade-off already on record | Re-diagnoses the toolbox/MOK failure from scratch under time pressure from a blocked upgrade — the conditions that produce a rushed `--force` or a stray `rm -rf` instead of a clean uninstall |
+| Confirm the fix stuck (`etckeeper` commit, rollback still live) | Checked in the same sitting as a standing habit (`/etc-drift`, `rpm-ostree status`) | Depends on a human remembering to check, with nothing auditing whether they did |
+
+None of this requires the agent to reason better than a browser tab running
+the same model. The difference is that it holds the shell, the file
+history, and the incident record in the same place a human would otherwise
+be manually relaying between — so nothing has to be re-explained,
+re-pasted, or re-diagnosed from session to session.
+
 ## 🛡️ How the guardrails classify
 
 Privilege is not the axis. `sudo`, `rpm-ostree` and `systemctl` are the job.

@@ -259,6 +259,14 @@ from-scratch setup path.
 - [ ] Verify the wiring, not just the files: run `./install.sh` (or just the
   extras repo's own report-only `*.sh` scripts directly) and confirm it
   reports on the extras apps instead of silently skipping them
+- [ ] **If this machine runs thunderbird-cli** (Betterbird + the email-agent
+  bridge, an extras-layer app): the extras repo's own installer script does
+  *not* by itself reach a safe end state — see
+  [`thunderbird-cli.md`](thunderbird-cli.md) for why and the exact rebuild
+  steps (token generation, the env file, the systemd unit's
+  `EnvironmentFile=`, the MCP wrapper). Do this before considering the
+  extras layer done, not as an afterthought — `incidents/I023` is what
+  happens if it's skipped
 - [ ] The manual ends here. Continue in that session.
 
 ### 3.8 The reversibility floor

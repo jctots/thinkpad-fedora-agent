@@ -51,3 +51,6 @@ Update both in the same commit as the install that satisfies an entry.
 - **Personal apps not every fork needs** — `docs/extras.md`'s private
   `EXTRAS_DIR` layer, with its own `PACKAGES.md`. Betterbird moved there
   2026-08-16: a specific mail client is a personal choice, not base tooling.
+  The thunderbird-cli email-agent bridge that runs alongside it needs an
+  auth layer this repo does own, though — see `docs/thunderbird-cli.md`
+  and `incidents/I023`.

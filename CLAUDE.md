@@ -54,6 +54,12 @@ yours to apply first — a hook is a backstop, not a substitute for thinking.
 - **Never commit secrets.** Anything authenticated — Wi-Fi PSKs, kickstart
   passwords, tokens, registry logins, home-lab hostnames and endpoints — is
   sourced from the gitignored `local/`, never inlined. This repo is public.
+- **`tb` (thunderbird-cli) returning `AUTH_REQUIRED` is correct, not a bug.**
+  This session has no mail tools and no MCP wiring to Betterbird's email
+  bridge — that access belongs to the second-brain agent only, gated by a
+  bearer token this session does not hold. See `incidents/I023` and
+  `docs/thunderbird-cli.md`. Do not source the token, do not add
+  `TB_AUTH_TOKEN` to this session's environment, do not "fix" this.
 - **New app requests default to the private extras layer (`EXTRAS_DIR`), not
   this repo.** This repo's scope is the harness/infrastructure (`scripts/`,
   `hosts/`, `.claude/`) plus the small foundational app set already in

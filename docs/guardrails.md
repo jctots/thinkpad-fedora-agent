@@ -339,6 +339,17 @@ gaps that remain with the entire layer working as designed.
 - **None of this survives an operator who approves without reading.** The layer
   converts an irreversible risk into a prompt. What the prompt is worth depends
   entirely on the person answering it.
+- **Tool-level restriction on one agent session does not bound another
+  session's shell.** `incidents/I023`: a same-user local service
+  (thunderbird-cli's `tb-bridge`) had no auth of its own, so this session —
+  with zero mail tools configured — read a full mailbox anyway, just by
+  shelling out to its CLI. The fix (`docs/thunderbird-cli.md`) is a bearer
+  token, and a shared secret cannot divide a trust domain it lives inside:
+  both this agent and the second-brain agent run as the same uid. If
+  `tb accounts` returns `AUTH_REQUIRED` from this session, that is the fix
+  working as intended — do not read the token or otherwise route around it.
+  Any local service reachable only by convention, not by an auth check of
+  its own, is this same gap waiting to be found again.
 
 ## 9. Lifting this into your own setup
 

@@ -113,6 +113,106 @@ Script refuses to run if the nvidia module is loaded (checks
 progress/results any time via `journalctl -t suspend-repro-loop` (no login
 or unlock needed, reads fine from a locked screen).
 
+**Repro attempts:** 2026-08-24 14:21–16:27 (~2h6m), 32 cycles, 60–300s
+asleep/45s awake gap, dGPU confirmed disabled beforehand, **connected to
+AC power throughout**. All 32 cycles resumed cleanly — `completed all 32
+cycles without a hang` in `journalctl -t suspend-repro-loop`. Verified
+independently via kernel PM log, not just the script's own claim:
+`journalctl -k` shows exactly 32 `PM: suspend entry (s2idle)` /
+`PM: resume from suspend-to-idle` pairs in the run's time window, each
+elapsed duration matching its requested sleep to within ~1s. No
+recurrence of the earlier 2h-late-resume anomaly noted above. Does not
+rule out the bug — it's intermittent and has hit both after a quick
+second suspend and after a single long overnight one, so a clean run is
+not evidence of a fix, just one more data point that this remains hard to
+reproduce on demand.
+
+**Correction — C-state cap was already live during today's clean run:**
+`processor.max_cstate=1` (staged 2026-08-23, see "Debug mechanism added"
+above) is confirmed active in the current boot's `/proc/cmdline` — kargs
+take effect on the *next* reboot after staging, and there's been a reboot
+since. So today's 2026-08-24 32-cycle AC run was never a "normal/uncapped
+C-states" test; it already ran with deep C-states disabled. This means
+the deep-C-state bisection lever has been live and untested-against-a-hang
+since 08-23 — a clean run under it isn't yet evidence either way, since
+there's no uncapped baseline on this host to compare it to. A future repro
+attempt with the cap removed (`pkexec rpm-ostree kargs
+--delete=processor.max_cstate=1`, reboot) is needed to get that baseline.
+Also confirmed: `cat /sys/power/mem_sleep` shows only `[s2idle]` — no S3
+fallback available on this hardware, ruling that out as a mitigation path.
+
+**Debug instrumentation added — 2026-08-24:**
+1. `hosts/thinkpad-e14-gen5/suspend-repro-loop.sh` now logs a
+   `log_pm_snapshot` line (AC/battery state + cpu0 C-state residency
+   counters from `/sys/devices/system/cpu/cpu0/cpuidle/state*/usage`)
+   before each suspend and after each resume, tagged the same as the
+   existing cycle log lines. Read-only sysfs reads, no system state
+   changed. Reversible trivially — it's a script edit, `git diff`/revert
+   in this repo.
+2. `/etc/modprobe.d/thinkpad-acpi-debug.conf` — `options thinkpad_acpi
+   debug=0xffff` (TPACPI_DBG_ALL: init, exit, rfkill, hotkey/EC events,
+   fan, brightness, mixer), targeting the EC/charger-negotiation
+   hypothesis specifically, which the existing generic `acpi.debug_layer`
+   kargs don't cover. Written via `pkexec cp ... /etc/modprobe.d/`,
+   confirmed committed by etckeeper (`255c6fc`). Takes effect on next
+   module reload — `thinkpad_acpi` was already loaded this boot without
+   the option, so effectively next reboot, or
+   `pkexec rmmod thinkpad_acpi && pkexec modprobe thinkpad_acpi` to apply
+   live. **Reverse:** `pkexec rm /etc/modprobe.d/thinkpad-acpi-debug.conf
+   && pkexec etckeeper commit "revert I021 thinkpad_acpi debug"`, then
+   reboot (or rmmod/modprobe again) to drop the verbosity.
+3. Considered and rejected: `dynamic_debug` (debugfs) toggling for
+   finer-grained live control without a reload — this host runs Secure
+   Boot with kernel lockdown in `confidentiality` mode
+   (`/sys/kernel/security/lockdown`), which blocks debugfs writes even as
+   root. modprobe.d + module reload was the only route available.
+
+**Untested variable — AC vs. battery:** every repro attempt so far
+(before this one) ran on AC power. Neither of the two organic hangs
+(2026-08-22, 2026-08-23) has AC/battery state recorded either, so this
+axis is completely unexplored, not just untested-and-clean. Plausible
+mechanism: ACPI0007 is a processor object, and CPU C-state/idle-loop
+entry criteria plus EC/charger negotiation on resume both differ between
+AC and battery — `power-profile-daemon` typically auto-switches to
+`power-saver` on battery, changing what state the CPU is in when s2idle
+freezes it. I019 is precedent that this hardware/firmware combo has at
+least one other power-state-dependent suspend pathology. Next repro
+attempt should run at least partly, ideally entirely, on battery to rule
+this in or out. Also worth running longer (more cycles/overnight) to
+widen the window regardless of power source.
+
+**Repro attempt — 2026-08-24 17:00–18:01 (~61m), on battery:** 16 cycles,
+60–300s asleep/45s awake gap, dGPU confirmed disabled beforehand
+(`nvidia not loaded` check in the script), `processor.max_cstate=1` still
+active in `/proc/cmdline` (not removed for this run — battery was the
+only variable changed, cap removal is still a separate untested lever).
+Battery held 53%→45% over the run, `AC=0` confirmed at every
+pre-suspend/post-resume snapshot. All 16 cycles resumed cleanly —
+`completed all 16 cycles without a hang` in
+`journalctl -t suspend-repro-loop`. cpu0 C-state usage counters climbed
+steadily every cycle (`C3_ACPI` 57966→111103) with no gaps or resets,
+consistent with normal idle-loop behavior throughout. No recurrence.
+Does not rule out the bug — still intermittent and now clean on both AC
+(32 cycles) and battery (16 cycles) under the C-state cap. The
+uncapped-C-state baseline (`processor.max_cstate=1` removed) remains the
+one lever left untested.
+
+**Uncapped-C-state baseline staged — 2026-08-24 (prep for overnight run):**
+`pkexec rpm-ostree kargs --delete=processor.max_cstate=1` run — confirmed
+via `rpm-ostree kargs` that the pending deployment's cmdline no longer
+includes it (`acpi.debug_layer=0x2 acpi.debug_level=0x4` kept). Queued for
+next boot, current boot unaffected, reversible via `rpm-ostree rollback`
+or re-appending the karg. Not yet rebooted — staged ahead of an overnight
+repro run so the reboot + launch can happen together when triggered.
+Planned invocation once rebooted and dGPU-disabled confirmed:
+`pkexec hosts/thinkpad-e14-gen5/suspend-repro-loop.sh 128 60 300 45`
+(~8h at default 60–300s/45s-gap timing). Power source (AC vs. battery)
+for this run still to be decided at launch time — both AC and battery are
+now clean at capped C-states (32 and 16 cycles respectively), so this run
+isolates the C-state variable alone if left on the same power source as
+one of those, or stacks both untested variables if run on battery
+overnight — worth deciding deliberately, not by default.
+
 **Fix:** none yet — open investigation.
 
 **Tried first:** `reset-triage` flagged the crash and collected the
