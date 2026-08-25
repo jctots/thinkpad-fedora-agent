@@ -55,14 +55,36 @@ fi
 # snapshot power source and cpu0 C-state residency counters around each
 # cycle. cpu0 only, not all CPUs — representative sample, keeps each log
 # line short. This is read-only (sysfs reads), no system state changed.
+#
+# Extended for I027 (2026-08-25): also snapshot the ACPI GPE_ALL counter,
+# IRQ9 (the SCI line — I027's crashed boot logged "Triggering wakeup from
+# IRQ 9" during the same class of hang), and the TCPU/acpitz thermal zones
+# (TCPU is one of the two pm_trace-implicated devices in I027; the other,
+# UA01, has no sysfs counter to sample). Logged via `logger`, i.e. straight
+# to journald, deliberately — not written to a file under /tmp. /tmp on
+# this host is tmpfs, and I027's own live-capture attempt lost everything
+# it wrote there when the hang forced a hard power-cycle. journald's
+# persistent storage (already relied on throughout this script via
+# `journalctl -t suspend-repro-loop` after reboot) survives exactly that
+# case, which is the whole point of capturing anything here.
 log_pm_snapshot() {
-  local label="$1" ac batt cstates=""
+  local label="$1" ac batt cstates="" gpe_all irq9 tcpu acpitz
   ac=$(cat /sys/class/power_supply/AC*/online 2>/dev/null | head -1)
   batt=$(cat /sys/class/power_supply/BAT*/capacity 2>/dev/null | head -1)
   for d in /sys/devices/system/cpu/cpu0/cpuidle/state*/; do
     cstates+="$(cat "$d/name" 2>/dev/null)=$(cat "$d/usage" 2>/dev/null) "
   done
-  logger -t suspend-repro-loop "$label: AC=${ac:-?} batt=${batt:-?}% cpu0-cstate-usage: ${cstates}"
+  gpe_all=$(cat /sys/firmware/acpi/interrupts/gpe_all 2>/dev/null)
+  irq9=$(awk '$1=="9:"{print $2}' /proc/interrupts)
+  # thermal_zone numbering isn't guaranteed stable across boots — resolve
+  # by type each time rather than hardcoding an index.
+  for z in /sys/class/thermal/thermal_zone*/; do
+    case "$(cat "$z/type" 2>/dev/null)" in
+      TCPU) tcpu=$(cat "$z/temp" 2>/dev/null) ;;
+      acpitz) acpitz=$(cat "$z/temp" 2>/dev/null) ;;
+    esac
+  done
+  logger -t suspend-repro-loop "$label: AC=${ac:-?} batt=${batt:-?}% cpu0-cstate-usage: ${cstates}gpe_all=${gpe_all:-?} irq9=${irq9:-?} TCPU=${tcpu:-?} acpitz=${acpitz:-?}"
 }
 
 logger -t suspend-repro-loop "starting: cycles=$CYCLES min=${MIN_SLEEP}s max=${MAX_SLEEP}s gap=${AWAKE_GAP}s"
