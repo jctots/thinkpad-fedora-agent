@@ -141,8 +141,120 @@ this time; next best step is probably repeating the soak test a few more
 times to see whether the device identity keeps changing (supports the
 noisy-match reading) or converges.
 
+**Third occurrence, 2026-08-25 (soak test with `ec_intr=0` added):** Staged
+`ec_intr=0` alongside `acpi.ec_no_wakeup=1` (I026's fix) specifically to
+test against this incident, confirmed active via `/proc/cmdline` before the
+lid-close. Hung again on the very first lid-close under the new karg.
+`last -x` marked the session `crash (00:04)` (17:56–18:00). Evidence:
+
+- Kernel log for the crashed boot stops dead at `PM: suspend entry
+  (s2idle)` (18:00:35) — identical shape to both prior occurrences.
+- `systemd-logind`: `Lid closed.` / `Suspending...` at 18:00:33, then
+  nothing — no `Lid opened`, no resume logged. Same as the second
+  occurrence: logind never saw a lid-open/resume signal at all.
+- Poller's last samples before the gap: `gpe_all` 1141→1146 and `irq9`
+  1147→1152 co-incremented in the final tick, matching the second
+  occurrence's GPE/IRQ9-co-increment-at-the-edge signal. `TCPU`/`acpitz`
+  stayed flat (59050/59000) the whole run — no thermal ramp, consistent
+  with the second occurrence and unlike the first.
+- `pm_trace` device match on the next boot: `memory memory75` — a
+  **fourth** distinct device identity across three hangs (`UA01`/`TCPU`,
+  then `tpm_crb_acpi MSFT0101:00`, now `memory75`). Treat this as
+  confirming the noisy-match reading rather than narrowing toward one
+  culprit device: `pm_trace` is not converging on a device here.
+- Gap between suspend entry and next boot's first log line was short
+  (~1m40s: 18:00:35 → 18:02:15), consistent with a fairly prompt forced
+  power-button recovery rather than a long unattended hang.
+
+**`ec_intr=0` is ruled out as a fix.** The hang recurred on the very first
+lid-close after adding it, with the same signature (log dies at suspend
+entry, no logind resume/lid-open event, GPE/IRQ9 co-increment at the
+edge) as the pre-`ec_intr=0` second occurrence. This is now three
+occurrences post-`acpi.ec_no_wakeup=1` and zero clean lid-close soak
+results at any karg combination tried so far. Both EC-side kargs tried
+to date (`ec_no_wakeup=1`, `ec_intr=0`) address wake-thrash/EC-interrupt
+symptoms, not this hang — worth revisiting the reinstall-vs-BIOS-downgrade
+conversation rather than continuing to iterate on EC kargs one at a time.
+
 **Tally:** time-to-fix — not yet fixed, still open · first proposal:
 n/a — agent unavailable (the hang itself happened with no session running
 to observe or act on it; triage after the fact was same-session,
-same-day). Second occurrence: same — hang happened with no session
-observing, soak test triage was same-session, same-day.
+same-day). Second occurrence: same. Third occurrence: same — `ec_intr=0`
+was the proposed fix candidate and did not hold; triage after the fact
+was same-session, same-day.
+
+**Workaround, 2026-08-25 (user call, not a fix):** User identified
+`acpi.ec_no_wakeup=1` itself (I026's fix) as the point where lid-close
+resume stopped working, matching this incident's own standing hypothesis
+that EC wake-thrash was previously interrupting suspend before it could
+reach this hang. Reverted both EC kargs to the pre-I026 baseline:
+`pkexec rpm-ostree kargs --delete=acpi.ec_no_wakeup=1
+--delete=ec_intr=0`, staged for next boot. Trade-off accepted explicitly:
+this un-fixes I026 (EC GPE wake-thrash / battery drain returns) in
+exchange for reliable lid-close resume while I027 stays unsolved. Not a
+resolution of either incident — I026 is now open again pending a real fix
+for I027, and I027's root cause is still unknown. Revert is a single
+`rpm-ostree kargs --delete` away (see `incidents/I026` for the original
+`--append`) if the trade needs reversing again.
+
+**Fourth occurrence, 2026-08-25 (first lid-close test with the EC-karg
+revert workaround active):** Rebooted with both EC kargs removed
+(confirmed via `journalctl -b -1 -k | grep "Command line"` — neither
+`acpi.ec_no_wakeup` nor `ec_intr` present). First lid-close under the
+reverted kargs hung again. `last -x` marked the session `crash (00:03)`
+(18:31–18:34). User's direct observation: machine went to standby
+normally on lid-close; on lid-open the LEDs changed from pulsating
+(sleep-breathing) to **steady**, but there was no other reaction — no
+display, no input response. This is a different physical signature than
+the first occurrence (heat, LEDs stayed pulsating) and matches I021's
+original description almost exactly (LED pulsating→steady on lid-open,
+no display/input). The LED transition itself isn't journald-visible (EC/
+keyboard-controller state, not OS-logged), so logs neither confirm nor
+contradict it directly — but they fully corroborate the "no other
+reaction" half: nothing at all is logged after suspend entry, by any
+service, kernel or userspace, all the way to the forced power-off.
+Log evidence:
+
+- `systemd-logind`: `Lid closed.` / `Suspending...` at 18:33:57, kernel
+  log stops dead at `PM: suspend entry (s2idle)` (18:33:58) — identical
+  shape to all three prior occurrences. No `Lid opened`, no resume logged
+  — same as the second and third occurrences, logind never saw a
+  lid-open/resume signal at all.
+- `journalctl --list-boots` for this boot shows first-entry (20:31:26)
+  *earlier* than last-entry (18:33:58) reversed — i.e. the crashed boot's
+  recorded end timestamp is before its start timestamp, `pm_trace`'s
+  bogus-RTC side effect (see I017) firing again, itself a positive signal
+  that the trace caught something this cycle too.
+- `pm_trace` device match on the next boot: `tty ttyS21` / `port
+  serial8250:0.20` — a **fifth** distinct device identity across four
+  hangs (`UA01`/`TCPU`, then `tpm_crb_acpi MSFT0101:00`, then `memory75`,
+  now `ttyS21`/`serial8250:0.20`). Further confirms the noisy-match
+  reading: `pm_trace` is not converging on a device across any of these
+  occurrences. Notably this is the first occurrence where the flagged
+  device is a literal UART (the `serial8250` driver), coincidentally
+  matching this incident's title, but given the pattern of four different
+  devices in four tries that's read as coincidence, not a new lead.
+
+**The EC-karg-revert workaround does not fix this.** This was the user's
+own hypothesis — that I026's `acpi.ec_no_wakeup=1` was itself masking a
+pre-existing suspend hang by keeping cycles short via wake-thrash — and it
+predicted this hang would stop once both EC kargs were removed. It did
+not: the very first lid-close after the revert hung with the same
+signature (log dies at suspend entry, no logind resume event, `pm_trace`
+noise) as all three occurrences that happened *with* the kargs present.
+This falsifies the standing hypothesis rather than just under-tuning it —
+neither adding EC kargs (I026's fix, occurrences 1–3) nor removing them
+(this occurrence) changes the outcome, which points toward the hang being
+independent of the EC-wake-thrash mechanism entirely. Per the standing
+guidance not to keep iterating on kargs one at a time: this is now four
+occurrences, two different karg states, zero clean soaks — the
+reinstall-vs-BIOS-downgrade conversation flagged after the third
+occurrence is the more promising avenue, not a fifth karg to try. Karg
+state currently: both EC kargs still reverted (I026 still open) since
+reverting them bought nothing and there's no reason to re-add them yet.
+
+**Tally, fourth occurrence:** time-to-fix — still open · first proposal:
+n/a — agent unavailable (hang happened with no session running); this
+occurrence also falsifies the user's own workaround hypothesis, not an
+agent proposal — recorded here since CLAUDE.md asks the tally to count
+misses generally, not just the agent's own.

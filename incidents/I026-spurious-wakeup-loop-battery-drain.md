@@ -311,6 +311,44 @@ actually crashed the machine. This session can't run that soak test
 itself (needs the lid physically closed and the machine left alone) —
 needs the user to run it and report back, or a scheduled check-in.
 
+**Ruled out — masking GPE 0x6E specifically instead of the broad
+`ec_no_wakeup`/`ec_intr` kargs, 2026-08-25:** With both EC kargs still
+reverted (I027's workaround trade-off) and I027 unresolved after four
+occurrences, tried a more surgical alternative: `pkexec bash -c 'echo
+mask > /sys/firmware/acpi/interrupts/gpe6E'` (the modern `mask` verb,
+`acpi_mask_gpe()`, not the older/less-reliable `disable`). Motivation: the
+DSDT disassembly above already shows GPE 0x6E's only handlers are BAT0
+notifies, no lid/thermal/dock handler at all, so masking just this GPE
+should in theory stop the wake-thrash without touching lid-open wake or
+either EC karg.
+
+Live-confirmed the mask took effect (`gpe6E` counter stopped climbing,
+flat for 10+ minutes under a poller sampling once per second vs. the
+usual ~4/s on AC). But it broke something unexpected: **the lid switch
+stopped producing any event at all while GPE 0x6E was masked** — two
+separate lid close/reopen cycles (~10 minutes apart, one on AC, one after
+disconnecting AC) produced zero `logind` `Lid closed` lines and zero
+kernel `PM: suspend entry` lines. `/proc/acpi/button/lid/LID/state` still
+read the correct live physical state, but the transition event that
+drives `logind`'s suspend logic never fired. Unmasking
+(`echo unmask > .../gpe6E`) immediately restored normal behavior —
+confirmed with a clean lid close/reopen producing the expected
+`Lid closed` → `PM: suspend entry` → `Wakeup after ACPI Notify sync` →
+`PM: suspend exit` → `Lid opened` sequence in 10 seconds, same shape as
+every previously-working cycle.
+
+This means GPE 0x6E is **not actually isolated from the lid switch's own
+event path on this machine**, despite the DSDT saying it should be —
+consistent with this being the same BIOS 1.43 generation already shown to
+have other firmware-level bugs (the UCSI `Invalid num_connectors 130.
+Likely buggy FW` message found the same session). Masking one GPE
+disturbing an unrelated device's event delivery is exactly the kind of
+thing a buggy GPE dispatch implementation would do. **Ruled out as a fix
+candidate** — it doesn't just fail to help, it's worse than either karg
+tried so far (both of those left lid detection itself working; this
+didn't). Not attempting GPE-level masking again without new evidence that
+narrows why it cross-affected the lid switch.
+
 **Tally:** time-to-fix — same day (2026-08-25), root-caused and fix
 persisted across a reboot within one session · first proposal: right —
 `reset-triage`'s evidence collection plus the follow-up suspend-cycle
