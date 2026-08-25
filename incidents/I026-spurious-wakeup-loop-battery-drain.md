@@ -439,3 +439,21 @@ isolated cleanly — `processor.max_cstate=1` (already used for I021, not
 yet tried in combination with this thrash) or accepting a kernel-level EC
 driver quirk/patch as the likely fix surface instead of firmware or GPE
 config.
+
+**Driver-isolation pass, 2026-08-25 — Bluetooth ruled out.** User proposed
+isolating by disabling drivers one at a time, starting with the two
+already suspected (NVIDIA dGPU, Xbox controller) — both turned out to
+already be inactive during every reproduction so far (`nvidia` module not
+loaded this boot, blacklisted since I019; no Xbox controller connected,
+no `xpad`/`xone` module loaded), so neither could be the trigger and
+disabling them further would test nothing new. Picked Bluetooth instead
+(`rfkill block bluetooth`, no root needed, fully reversible) as a cheaper,
+better-precedented spurious-wake suspect. Thrash reproduced identically
+with Bluetooth radio off — 5 rapid ~0.99s cycles, same
+`ACPI EC GPE dispatched` / `Wakeup after ACPI Notify sync` shape as every
+prior occurrence. Bluetooth ruled out; radio unblocked afterward. Next
+driver-isolation candidates, if continuing this approach: `i8042`
+(keyboard controller — some ThinkPad ECs share GPE/IRQ routing with it) or
+`thinkpad_acpi` itself (owns lid-switch ACPI event handling, but unloading
+it also loses fan/battery/backlight control — a blunt instrument, try
+last).
