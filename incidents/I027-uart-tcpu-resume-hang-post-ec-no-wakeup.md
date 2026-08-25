@@ -124,6 +124,15 @@ occurrence). The machine hung again. `last -x` marked the session
 - No orphaned poller process on the next boot (checked, none found) and
   no repro-loop cycle involved — this was a plain lid-close, not run
   through `suspend-repro-loop.sh`.
+- `systemd-logind`'s own log for the crashed boot: `Lid closed.` /
+  `Suspending...` at 17:46:27, then nothing — no `Lid opened`, no resume,
+  no wake event of any kind logged before the next boot's cold start at
+  17:47:59. The user reported opening the lid produced no wakeup at all
+  (previously reliable). This is consistent with that: logind never
+  logged receiving a lid-open signal, as opposed to receiving one and
+  failing to act on it. Points at the hang being deep enough by the time
+  the lid was reopened that even the lid-switch GPE wasn't being
+  serviced, not a resume-path failure after a successful wake signal.
 
 This is now two occurrences post-`ec_no_wakeup=1`, zero clean lid-close
 soak results yet. Still not root-caused. The Bluetooth-disable
