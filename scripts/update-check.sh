@@ -42,6 +42,18 @@ if command -v rpm-ostree >/dev/null 2>&1; then
     echo "$check_out" | grep -E "AvailableUpdate|No updates available|^error" || echo "$check_out" | tail -3
     if echo "$check_out" | grep -qi "AvailableUpdate"; then
         echo
+        # --preview itemizes the layered-package diff (Upgraded/Downgraded/etc)
+        # without deploying anything — this is what GNOME Software's "System"
+        # tile breaks individual packages like Firefox out of, so surface the
+        # same names here instead of leaving it at "AvailableUpdate".
+        preview_out="$(rpm-ostree upgrade --preview 2>&1)" || true
+        echo "$preview_out" | awk '
+            /^[[:space:]]+(Upgraded|Downgraded|Removed|Added):/ { capture=1 }
+            capture && /^[[:space:]]{17}[^[:space:]]/ { print; next }
+            capture && /^[[:space:]]+(Upgraded|Downgraded|Removed|Added):/ { print; next }
+            capture { capture=0 }
+        ' || echo "(preview produced no itemized diff — see 'rpm-ostree upgrade --preview' directly)"
+        echo
         echo "Run: rpm-ostree upgrade && systemctl reboot"
     fi
 else
