@@ -419,6 +419,16 @@ calculation on the settling cycle — a related but previously unrecorded
 symptom, distinct from the already-known `pm_trace`-writes-bogus-RTC
 issue (I017), since `pm_trace` was confirmed at 0 (off) for this boot.
 
+**Confirmed real, not just a log artifact:** `chronyc tracking` right
+after showed the system clock genuinely running ~7184 seconds (~2h) fast
+of NTP, matching the bogus duration almost exactly. Corrected with
+`pkexec chronyc makestep` (`501 Not authorised` on the unprivileged
+`chronyc makestep` first — this command needs root). So the thrash
+doesn't just log a bad number, it actually mis-programs the system clock
+by the same magnitude — a real, if minor, side effect of the bug worth
+noting for anyone debugging odd timestamps elsewhere in the journal during
+a thrash window.
+
 **Conclusion:** firmware version is not the root cause, or at least 1.39
 doesn't clear it — ruling out the 1.42→1.43 regression theory as the
 *sole* explanation (see I026/I027 cross-reference). Downgrade does not
