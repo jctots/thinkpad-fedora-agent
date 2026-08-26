@@ -752,3 +752,81 @@ loses fan/battery/backlight control while unloaded — try last). No new
 test proposed this session; next step is a decision with the user on
 whether to pursue driver isolation further or accept the current
 `acpi.ec_no_wakeup=1`-vs-I027-workaround trade-off as a standing state.
+
+**Debug-instrumentation-as-confound check, 2026-08-26 — s2idle escalation
+stripped for a clean baseline.** User raised a reasonable question: the
+case-specific debug escalation layered on top of the D33 baseline since
+2026-08-23 (`intel_idle.max_cstate=1`, `acpi.debug_layer=0x2
+acpi.debug_level=0x4`, `no_console_suspend`, and a forced 1s journald
+fsync via `99-pm-debug-sync.conf`) has been active for every occurrence
+recorded in this incident and in I027 — could the instrumentation itself
+be contributing interrupt/power noise rather than just observing it? Note
+`intel_idle.max_cstate=1` was already tested directly above and shown not
+to change whether the thrash reproduces, but that doesn't rule out a
+smaller, additive effect on idle power draw or interrupt rate that a
+present/absent thrash comparison wouldn't catch.
+
+Removed all four pieces for a clean baseline, scope limited to the
+case-specific escalation only (the permanent D33 sensors — verbose
+`pm_debug_messages`, `kernel.sysrq=1`, 15s journald sync baseline — stay
+armed per standing project decision, not part of this test):
+
+- `pkexec rm /etc/systemd/journald.conf.d/99-pm-debug-sync.conf` +
+  `pkexec systemctl restart systemd-journald` (reverts to the 15s D33
+  baseline sync interval)
+- `rpm-ostree kargs --delete=no_console_suspend
+  --delete=acpi.debug_layer=0x2 --delete=acpi.debug_level=0x4
+  --delete=intel_idle.max_cstate=1` — staged, confirmed via `rpm-ostree
+  kargs` showing none of the four remain; **not yet active, needs a
+  reboot**
+- `pkexec etckeeper commit` (699b14e)
+
+**Reminder for whoever reads this next:** once rebooted onto the clean
+kargs, a future occurrence of either I026's thrash or I027's hang without
+`no_console_suspend` active means the physical-screen suspend message
+capture I027 relies on won't be available for that occurrence — expected
+and acceptable for a deliberate baseline test, but worth knowing before
+reading a future entry that's missing that evidence and wondering why.
+
+**Clean-baseline test result, 2026-08-26 — thrash reproduces immediately,
+instrumentation confirmed NOT a confound.** First suspend attempt after
+the reboot onto the clean kargs (confirmed via `rpm-ostree kargs`: none of
+the four debug items present), triggered live via `systemctl suspend`
+with a `journalctl -k -f` capture running across the transition so the
+resume trace was caught directly rather than reconstructed after the
+fact.
+
+Reproduced on the very first attempt: **64 `Timekeeping suspended for
+~0.99 seconds` cycles**, each following the same signature already
+established for this incident (`ACPI: EC: ACPI EC GPE status set` →
+`dispatched`/`work flushed` → `ACPI: PM: Rearming ACPI SCI for wakeup` →
+`PM: Triggering wakeup from IRQ 9`), before a real resume finally landed.
+64 cycles × ~0.99s accounts almost exactly for the ~67s wall-clock gap
+between `PM: suspend entry` (09:28:06) and the eventual real `PM: suspend
+exit` (09:29:13) — i.e. the machine was thrashing through the entire
+window it appeared to be asleep, consistent with the incident's core
+mechanism (each cycle costs real power vs. staying asleep, though this
+was a short single cycle, not long enough to meaningfully drain the
+battery on its own).
+
+This directly answers the question that motivated stripping the
+instrumentation: the thrash is not an artifact of the debug tooling
+(verbose ACPI tracing, forced fast journald fsync, C1-capped idle) — it
+reproduces identically with all four removed, on the first attempt, no
+soak required. Strengthens the standing EC-firmware-bug read (BIOS
+1.39/1.43 EC GPE 0x6E dispatch race) rather than raising any new doubt
+about it. No new candidate fix surface identified by this test — it was a
+confound check, not a fix attempt.
+
+Trade-off from the removal already noted above applies: `no_console_suspend`
+being gone means no physical-screen capture was possible for this
+occurrence, but the `journalctl -k -f` background-capture approach used
+here (writing to a file across the suspend/resume transition, read back
+after resume) filled the same evidence gap without needing the console
+method — worth reusing for future on-demand tests instead of waiting for
+an unattended overnight occurrence.
+
+**Tally (this test):** time-to-observe — under 2 minutes from trigger to
+result · first proposal: right — capturing `journalctl -k -f` to a file
+before triggering suspend, then reading it back post-resume, worked on
+the first attempt and required no retry.
