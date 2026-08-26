@@ -493,3 +493,162 @@ above).
 Sources consulted:
 - [How to prevent TrackPoint or touchpad events from waking up ThinkPad T14 Gen 5 AMD from suspend](https://nobuto-m.github.io/post/2025/how-to-prevent-trackpoint-events-from-waking-up-thinkpad-t14-gen-5-amd-from-suspend/)
 - [Bug #1960771 "Use EC GPE for s2idle wakeup on AMD platforms" — Ubuntu](https://bugs.launchpad.net/ubuntu/+source/linux/+bug/1960771)
+
+**`intel_idle.max_cstate=1` tested, 2026-08-25 — ruled out, and it exposed a
+methodology gap in the prior C-state test.** Prior handover had staged
+`processor.max_cstate=1` and rebooted into it, but inspection this session
+found that karg has **no effect** on this machine: `current_driver` for
+cpuidle is `intel_idle`, not `acpi_idle`, and `processor.max_cstate` is
+only consumed by the ACPI processor driver
+(`drivers/acpi/processor_idle.c`). `intel_idle` needs its own parameter,
+`intel_idle.max_cstate=N`. This means the *previous* boot's lid-close test
+was silently run uncapped (sysfs `max_cstate` read `9`) despite the karg
+being present in `rpm-ostree kargs` and `/proc/cmdline` — it tested nothing
+new. It also casts doubt on I021's earlier `processor.max_cstate=1`
+bisection: that entry confirms sysfs read `9` *after* the cap was removed,
+but never explicitly confirms it read a capped value while the karg was
+supposedly active — worth a skeptical re-read if this ever matters again.
+
+Corrected via `pkexec rpm-ostree kargs --delete=processor.max_cstate=1
+--append=intel_idle.max_cstate=1`, rebooted, confirmed capping actually
+took this time: `/proc/cmdline` carries `intel_idle.max_cstate=1` with
+`processor.max_cstate` absent, `/sys/module/intel_idle/parameters/max_cstate`
+reads `1` (not `9`), and `/sys/devices/system/cpu/cpu0/cpuidle/` shows only
+2 states (`state0`, `state1`) vs. 4 in the uncapped baseline.
+
+Ran the standard supervised lid-close/open test under this genuinely
+capped config: a quick manual lid-close/open (not a soak). Thrash did
+**not** stop — it reproduced at a much higher cycle count than any prior
+test: 187 `Timekeeping suspended` events this boot (360 matching
+`ACPI EC GPE dispatched`/`Wakeup after ACPI Notify sync` lines, consistent
+with the same signature seen in every earlier occurrence), vs. the
+previously observed 15–57 range.
+
+**Correction, caught by the user, don't skip this check again:** realtime
+timestamps initially made this look like a ~2h03m sleep (`Lid closed`
+20:01:25 → `Lid opened` 22:04:34) with the storm happening at the very
+end. **That's an artifact, not real elapsed time.** Cross-checked against
+`-o short-monotonic`: `PM: suspend entry` at monotonic `78.684`,
+`PM: suspend exit` at monotonic `83.424` — the whole sequence, all 187
+cycles included, took **~5 real seconds**, matching a quick manual
+lid-close/open, not a soak. The 187 per-cycle `Timekeeping suspended for
+~0.99 seconds` lines are themselves impossible as real durations (187 ×
+~1s can't fit inside a 5-second monotonic window) — they're bogus
+EC/RTC-readback values, and the final line's `7199.196` seconds (same
+family as the `7198.866`/`7198.867` values seen twice before in this
+incident) is the same garbage-value class corrupting the realtime clock
+enough to push the logged `Lid opened` timestamp ~2h03m into the future.
+**Lesson for future tests in this incident: always cross-check
+`-o short-monotonic` against realtime before reasoning about elapsed
+sleep duration or drain — this bug corrupts the realtime clock itself, so
+realtime timestamps are not trustworthy evidence here.** This doesn't
+change the ruling on `intel_idle.max_cstate=1` (thrash still reproduced),
+but it does mean this particular test measured a rapid-fire storm on a
+short manual test, not a multi-hour drain — the original multi-hour
+battery-drain framing from this incident's opening entry was based on a
+separate, longer real-world occurrence and is not contradicted by this.
+Clock had already self-corrected by the time this was checked post-test
+(`chronyc tracking` showed sub-millisecond offset).
+
+`intel_idle.max_cstate=1` ruled out as a fix. C-state capping (both the
+broken `processor.max_cstate` and the working `intel_idle.max_cstate`
+variants) is now exhausted as a candidate axis for this investigation.
+
+**Driver/device isolation tally, updated:** NVIDIA (inactive, N/A) · Xbox
+controller (inactive, N/A) · Bluetooth (ruled out) · `PNP0C0E:00` ACPI
+Sleep Button (ruled out) · C-state capping, both `processor.max_cstate`
+(untested — karg had no effect) and `intel_idle.max_cstate=1` (tested,
+ruled out). Remaining: `i8042`/`thinkpad_acpi` (both blunter, higher-risk
+to test), or pivot to a kernel-bugzilla/LKML search using the clock-skew
+fingerprint (`~7198.9`s bogus duration, repeatable) as the search term —
+decision needed with the user on which to pursue next.
+
+**Upstream search, 2026-08-25.** User chose the search-first pivot.
+`/sys/power/mem_sleep` on this machine only offers `[s2idle]` — no `deep`
+(S3) option available in firmware, so "switch off s2idle entirely" is not
+a usable workaround here regardless of upstream findings.
+
+The closest matching upstream thread is Rafael J. Wysocki's kernel patch
+series "[PATCH 0/2] ACPI: PM: s2idle: Harden the premature EC wakeups
+handling" — same shape as this incident: EC GPE dispatch racing against
+`acpi_s2idle_wake()`'s SCI rearm/cancel logic, producing repeated
+spurious-wakeup loops during s2idle specifically (not S3), tied to
+`acpi_ec_dispatch_gpe()`'s interaction with `pm_wakeup_pending()`. Also
+closely related: `linux-surface/linux-surface` issue #75 ("[regression]
+s2idle: spurious/premature wakeups on 5.4+"), documenting the same class
+of bug on different hardware (Surface Book 1 / Pro 4), and Ubuntu bug
+#1960771 ("Use EC GPE for s2idle wakeup on AMD platforms", already cited
+above). These patches landed years ago (5.16-era) and this machine is on
+kernel 7.1.10 — so either a regression reintroduced the same failure mode,
+or this is a distinct-but-similar EC/GPE race specific to this BIOS
+1.39/1.43 firmware's GPE 0x6E battery-status handler (see this incident's
+opening root-cause entry). No exact hit for the specific
+`~7198.9`s/`~0.99`s bogus-duration fingerprint or for BIOS-1.4x-era
+Lenovo E14 Gen 5 hardware — this specific manifestation does not appear to
+be already reported upstream. Worth opening a kernel bugzilla report if
+`i8042`/`thinkpad_acpi` isolation doesn't narrow it further; the
+`intel_idle.max_cstate=1` test's monotonic-vs-realtime evidence (this
+entry, above) would be useful supporting data for such a report since it
+demonstrates the RTC/EC corruption is real and reproducible, not
+measurement error.
+
+Sources consulted this pass:
+- [PATCH 0/2] ACPI: PM: s2idle: Harden the premature EC wakeups handling — https://lkml.kernel.org/lkml/9291082.ZuhHelrm8h@kreacher/T/
+- [regression] s2idle: spurious/premature wakeups on 5.4+ — https://github.com/linux-surface/linux-surface/issues/75
+- [PATCH[RFT]] ACPI: EC: s2idle: Avoid flushing EC work when EC GPE is inactive — https://patchwork.kernel.org/project/linux-acpi/patch/4502272.pByIgeXik9@kreacher/
+
+**Correction to the 2026-08-25 monotonic-vs-realtime claim above:** that
+entry concluded the ~2h realtime gap on the quick manual test was "fake"
+because `CLOCK_MONOTONIC` only advanced ~5s across it. That reasoning was
+wrong — `CLOCK_MONOTONIC` does not advance during suspend at all
+(suspended time is deliberately excluded; that's what `CLOCK_BOOTTIME`
+is for), so a small monotonic delta is expected across *any* suspend,
+real or thrashing, and proves nothing about real elapsed duration on its
+own. The realtime-clock corruption finding itself still stands (confirmed
+independently below), but don't reuse the monotonic-delta argument as
+evidence of a short real sleep in future tests here — check
+`CLOCK_BOOTTIME` (`journalctl -o short-monotonic` doesn't expose it
+directly; cross-check the actual `Lid closed`/`Lid opened` realtime pair
+from `systemd-logind` instead, which is what settled the case below).
+
+**First real overnight occurrence captured, 2026-08-26.** User closed the
+lid at 20:13:03 (2026-08-25) on AC power, then **removed the charger while
+the lid was still closed**. Reopened at 10:37:14 (2026-08-26) — a genuine
+~14h24m sleep, confirmed via the `systemd-logind` `Lid closed`/`Lid
+opened` realtime pair (not monotonic — see correction above). User
+reported the machine was very hot on wake but the battery was *not*
+significantly drained (43% on wake, charger reconnected).
+
+Kernel-level, this was **one continuous suspend session** — a single
+`PM: suspend entry (s2idle)` at 20:13:04 and a single `PM: suspend exit`
+at 10:37:15, no full intermediate resume/re-suspend pairs. This is a
+materially different (lighter) failure mode than the original discovery
+at the top of this incident, which saw repeated *full* resume/re-suspend
+cycles with real elapsed time burning the battery. Overnight, instead:
+**501 bogus `Timekeeping suspended` lines and 966 `ACPI EC GPE dispatched`
+lines occurred inside that single suspend session** — the EC kept firing
+GPE wakeup interrupts, the kernel roused just enough each time to check
+`pm_wakeup_pending()`, found nothing real, and went back to idle without
+a full device resume (no screen-on, no full driver resume path) — matches
+the "premature EC wakeup" bug class from the upstream patches cited
+above, just manifesting as a lighter-weight internal churn instead of full
+wake loops. Plausible explanation for "hot but not drained": hundreds of
+brief CPU/EC wake-and-recheck cycles sustained over 14 hours generate
+heat without the heavier full-resume power cost seen in the original
+incident.
+
+**New hypothesis: AC removal while suspended may be the trigger**, not
+just a coincidental detail. This incident's root cause is specifically a
+**battery-status** GPE (0x6E) being misrouted as a wakeup reason — and
+removing the charger is exactly the kind of event that fires a
+battery/AC status notification. No kernel-log line directly confirms the
+unplug's timestamp (AC/battery status changes don't appear to be logged
+to `dmesg` on this system even with the `acpi.debug_layer`/`debug_level`
+kargs active — checked, nothing in the window), so this is correlational,
+not confirmed. **Suggested follow-up test:** close the lid on AC power and
+leave the charger connected the whole time vs. the already-tested
+close-then-unplug — compare EC-GPE-dispatch counts. If leaving AC
+connected produces near-zero thrash, that would confirm AC removal as the
+trigger and point at a much narrower, more targeted fix surface (e.g.
+masking just the AC/battery status GPE while suspended, similar to the
+GPE 0x6E masking approach already tried and ruled out for the lid case).
