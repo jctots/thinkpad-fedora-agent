@@ -688,6 +688,57 @@ one short sample per condition this could easily be noise (each test was
 a single ~15-90s cycle, not a soak, so cycle-to-cycle variance at this
 sample size isn't distinguishable from a real effect).
 
+**Web search + DSDT re-check, 2026-08-26 — no new BIOS, no applicable
+driver fix, firmware-bug reading strengthened.** Followed up the failed
+AC-hypothesis with three searches (new firmware, `i8042` spurious-wake
+precedent, GPE-sharing conflicts) plus a fresh DSDT pull/disassembly to
+check GPE ownership directly, rather than relying on the earlier
+disassembly's summary from memory.
+
+- **No newer BIOS exists.** `fwupdmgr get-releases` on the System Firmware
+  device lists `0.1.43` (2026-04-28) as the newest available release —
+  same version already confirmed to cause both this incident and I027,
+  and no version beyond it has been published. Nothing to update to.
+- **`i8042` isolation would not touch this incident.** There's a real
+  upstream pattern of i8042 keyboard-controller spurious s2idle wakeups
+  (e.g. `SERIO_QUIRK_NOKBDWAKEUP`, added for MSI Claw devices), but a
+  fresh DSDT re-pull/disassemble (`pkexec cat
+  /sys/firmware/acpi/tables/DSDT` → `iasl -d` via the toolbox, same
+  method as the original DSDT finding above) confirms `Name (_GPE, 0x6E)`
+  is declared exactly once in the whole table, on `Device (EC)` — no
+  other device, including any keyboard/i8042-related one, is wired to
+  this GPE. `i8042` isolation stays a viable lead only for I027's
+  still-unidentified hang device, not for this incident.
+- **New finding: `LID` and `SLPB` do not declare GPE 0x6E either.**
+  Checked `_PRW` (power resource for wake) on both `LID` (`PNP0C0D`) and
+  `SLPB` (`PNP0C0E`, the ACPI Sleep Button device already ruled out
+  earlier in this incident) — both return GPE bit **0x17**, not 0x6E.
+  This means the "masking GPE 0x6E broke lid-switch event delivery"
+  finding from the earlier GPE-masking test (above) has no ACPI-table-level
+  explanation: LID isn't declared as sharing 0x6E at all. Cross-device GPE
+  sharing (LID/SLPB/UART on one GPE number) is a documented historical
+  ThinkPad ACPI quirk pattern on other models, but doesn't apply here
+  literally — the *actual* hardware behavior (masking 0x6E affecting LID
+  delivery) doesn't match what this machine's own DSDT declares. Read as
+  stronger evidence the EC's real dispatch logic diverges from its
+  advertised ACPI tables — a firmware bug in the EC's GPE-routing/dispatch
+  implementation itself, not something fixable from the OS side via kargs,
+  driver quirks, or GPE masking, and consistent with this BIOS generation's
+  other known firmware bugs (the UCSI "Likely buggy FW" message found
+  earlier in this investigation).
+
+**No action taken as a result — search turned up nothing actionable.**
+No firmware update available, no matching upstream driver quirk applies to
+this specific GPE. `i8042` driver isolation remains the one untried
+Linux-side lever, but only as a lead for I027, not this incident. Session
+paused here at the user's request; no further testing this session.
+
+Sources consulted this pass:
+- [Input: i8042 - Disable keyboard wakeup from s2idle on MSI Claw devices](https://lkml.iu.edu/hypermail/linux/kernel/2506.2/01805.html)
+- [ThinkPad ACPI Extras Driver Version 0.25](https://www.kernel.org/doc/Documentation/laptops/thinkpad-acpi.txt)
+- [Talk:How to make ACPI work — ThinkWiki (GPE-sharing precedent on other models)](https://www.thinkwiki.org/wiki/Talk:How_to_make_ACPI_work)
+- Lenovo ThinkPad E14 Gen 5 BIOS support pages (`ds562555`, `ds562987`) — checked via `fwupdmgr get-releases`, no newer release than 0.1.43 found.
+
 **Where this leaves the investigation:** AC state (connected/disconnected/
 mid-suspend-change) is not the trigger for GPE 0x6E wake-thrash. The
 original overnight occurrence's AC-removal detail (2026-08-26 entry above)
