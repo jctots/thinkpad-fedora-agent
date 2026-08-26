@@ -652,3 +652,52 @@ connected produces near-zero thrash, that would confirm AC removal as the
 trigger and point at a much narrower, more targeted fix surface (e.g.
 masking just the AC/battery status GPE while suspended, similar to the
 GPE 0x6E masking approach already tried and ruled out for the lid case).
+
+**AC-trigger hypothesis test result, 2026-08-26 — falsified.** Ran the
+suggested follow-up as 4 short supervised lid-close/open cycles (not
+another overnight soak), measuring `/sys/firmware/acpi/interrupts/gpe6E`
+(monotonic hardware counter, immune to this bug's own RTC corruption)
+before/after each, all on BIOS 1.39, both EC kargs still absent (I027's
+workaround still in effect). The first attempt at this same plan, one
+session earlier, hung with an I027 signature on the very first test (see
+I027's "Fifth occurrence") before any reading was taken; this attempt
+started fresh with a new baseline and completed all four:
+
+| Test | Condition | `gpe6E` delta |
+|---|---|---|
+| 1 | AC connected throughout, no change | **445** (1315→1760) |
+| 2 | AC disconnected throughout, no change | **224** (1894→2118) |
+| 3 | Lid closed → AC unplugged while closed → opened | **240** (2402→2642) |
+| 4 | Lid closed → AC plugged in while closed → opened | **302** (2642→2944) |
+
+All four cycles resumed cleanly (`Lid opened.` / `Operation 'suspend'
+finished.` logged each time, no I027 hang signature on any of the four).
+
+**This falsifies the AC-removal-as-trigger hypothesis.** Every condition
+produced substantial thrash — none were near-zero, including both
+no-AC-change conditions (Tests 1 and 2), which is what the hypothesis
+predicted should be near-zero if AC transition were the trigger. Tests 3
+and 4 (AC actually changing mid-suspend) did not show a meaningfully
+higher delta than Tests 1/2 either (240 and 302, within the same 224-445
+range as the no-change tests) — so AC transition doesn't even look like it
+adds thrash on top of a baseline rate, let alone cause it outright.
+Test 1 (AC connected, no change) was actually the *highest* of the four,
+which is the opposite of what the hypothesis predicted for that condition
+— worth noting as mildly odd rather than glossing over, though with only
+one short sample per condition this could easily be noise (each test was
+a single ~15-90s cycle, not a soak, so cycle-to-cycle variance at this
+sample size isn't distinguishable from a real effect).
+
+**Where this leaves the investigation:** AC state (connected/disconnected/
+mid-suspend-change) is not the trigger for GPE 0x6E wake-thrash. The
+original overnight occurrence's AC-removal detail (2026-08-26 entry above)
+was most likely coincidental — the thrash mechanism itself (confirmed root
+cause: EC GPE 0x6E premature-wakeup race, upstream bug class) fires
+regardless of AC state, as this test now shows directly rather than by
+inference. The still-open "what's the real trigger, if not AC" question
+reverts to the driver-isolation candidates already flagged and not yet
+tried: `i8042` (keyboard controller) or `thinkpad_acpi` itself (blunter,
+loses fan/battery/backlight control while unloaded — try last). No new
+test proposed this session; next step is a decision with the user on
+whether to pursue driver isolation further or accept the current
+`acpi.ec_no_wakeup=1`-vs-I027-workaround trade-off as a standing state.
