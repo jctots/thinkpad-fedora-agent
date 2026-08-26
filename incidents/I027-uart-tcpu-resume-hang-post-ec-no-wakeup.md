@@ -274,3 +274,80 @@ occurrences under 1.43. Needs an actual unattended multi-cycle soak
 ruled out for this incident specifically — unlike I026, where the thrash
 signature reproduced immediately and firmware was cleanly ruled out as a
 fix for *that* incident on the first cycle.
+
+**Fifth occurrence, 2026-08-26 (BIOS 1.39, first lid-close of a planned
+4-test AC/lid supervised sequence, agent unavailable during the hang):**
+Overnight lid-close/open (20:13 Aug 25 → 10:37 Aug 26, unattended, part of
+I026's ongoing soak) completed a clean resume —
+`systemd-logind` logged `Lid opened.` / `Operation 'suspend' finished.`
+at 10:37:14, no dead-log signature, consistent with the "Test result"
+entry above (this was I026's territory, GPE thrash, not this incident).
+Immediately after, the user began a **supervised** short-test plan to
+isolate I026's AC-removal-as-trigger hypothesis (4 conditions: lid
+close/open with AC connected throughout, disconnected throughout, and two
+mid-suspend AC-toggle variants — see the session handover for the full
+plan). **Test 1** (lid close/open, AC connected throughout, no AC change)
+was the very first step. `systemd-logind` logged `Lid closed.` /
+`Suspending...` at 10:48:23; kernel log stops dead at `PM: suspend entry
+(s2idle)` (10:48:24) — identical shape to all four prior occurrences.
+`last -x` marked the session `crash (12:51)` (Aug 25 20:00 → Aug 26,
+duration reflects the whole login session including the clean overnight
+cycle, not just the hang). No `Lid opened`, no resume logged before the
+next boot's cold start at 10:51:42 (~3 min gap, forced power-cycle by
+hand) — same shape as the second, third and fourth occurrences.
+
+Evidence:
+
+- Karg state at the time of the hang (`journalctl -b -1 -k | grep
+  "Command line"`, cross-checked against the current boot's
+  `/proc/cmdline` since neither karg change survives a `kargs` edit
+  mid-session): **no** `acpi.ec_no_wakeup` or `ec_intr` present — the
+  fourth occurrence's EC-karg revert is still in effect, as expected.
+  Notably `intel_idle.max_cstate=1` (staged for I026's C-state-cap test,
+  "ruled out" there as ineffective against the GPE thrash) is **still
+  present** and was active for this hang too — not previously flagged as
+  a variable for this incident specifically. Six distinct karg states
+  now span the five occurrences (baseline, `ec_no_wakeup=1`, `+ec_intr=0`,
+  both reverted, both reverted `+max_cstate=1`) with a hang at every one
+  tried except the single untested-to-soak clean 1.39 cycle — this
+  further undercuts any EC-karg or C-state-karg explanation.
+- `pm_trace` on the next boot (`journalctl -b 0 -k | grep -i "hash
+  matches"`): **no match found** — the only occurrence so far where
+  `pm_trace` didn't identify any device at all on the following boot. The
+  one "hash matches" line present in the crashed boot's own log
+  (`journalctl -b -1`) is dated to that boot's *start* (Aug 25 22:00:09),
+  i.e. it identifies whatever tripped the boot *before* this one, not
+  this hang — already-known/stale, not a sixth device identity.
+  Read as an outright miss rather than a sixth noisy match; doesn't
+  change the standing "pm_trace isn't converging on a device" reading.
+- `journalctl --list-boots` end-timestamp for boot `0` again shows the
+  bogus-earlier-than-start pattern (`08:52:21` end vs. `10:51:42` start)
+  — the RTC-corruption side effect from I026/I017, a positive signal the
+  suspend path was genuinely entered even though `pm_trace` didn't tag a
+  device this time.
+- Immediately preceding the hang (10:37–10:47, same boot, after the clean
+  overnight resume and before Test 1's lid-close), the kernel log shows
+  repeated wifi roaming churn — `wlp0s20f3` re-authenticating and
+  reassociating back and forth between two APs (`...6b:84`/`...6b:85`,
+  presumably two radios of the same AP/mesh) roughly every 1–5 minutes.
+  Not obviously connected to the hang mechanism (no prior occurrence
+  flagged wifi), but noted since it's new in this boot's log and worth a
+  glance if a pattern recurs.
+- Agent was not running during the hang — `local/session-launch-failures.log`
+  is empty, so this wasn't a launch failure, but no session was active to
+  observe or capture live state; triage was after-the-fact on the next
+  "I'm back", same as all four prior occurrences.
+
+**Bearing on the AC-hypothesis test plan:** Test 1's condition was AC
+connected throughout, no AC state change — the hang happening here (before
+any AC-disconnect/AC-toggle variant was even reached) is itself weak
+evidence *against* "AC removal/insertion while suspended" as this
+incident's trigger, though it says nothing about I026's GPE-thrash
+mechanism specifically, which is a separate signature. The 4-test plan
+itself is not resumed by this write-up — see next steps.
+
+**Tally, fifth occurrence:** time-to-fix — still open · first proposal:
+n/a — agent unavailable (hang happened with no session running to observe
+or intervene); this is now five occurrences across six distinct karg
+states with zero on-demand-reproducible clean soak, reinstall/BIOS-
+downgrade remains the flagged next avenue over further karg changes.
