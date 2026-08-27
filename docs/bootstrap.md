@@ -203,6 +203,7 @@ Two paths on Silverblue, and they behave differently:
 | Layered Microsoft RPM repo | Behaves like a normal install, integrates with host tooling. Costs a layered package and a reboot |
 
 - [ ] Pick one and install it. Alternatives were weighed, so this is a decision, not an incident — record which and why as a decision once the repo exists. This is exactly the kind of choice the project is for.
+- [ ] If it's the flatpak path and any project on this machine attaches Dev Containers to rootless Podman (second-brain does): `scripts/install-devcontainers-host.sh` — see `docs/devcontainers.md`. Requires §3.7 (this repo) already cloned; comes back to this checklist item rather than duplicating it in §3.7.
 
 ### 3.7 thinkpad-fedora-agent
 

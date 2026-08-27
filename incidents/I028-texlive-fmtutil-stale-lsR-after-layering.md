@@ -1,0 +1,127 @@
+## I028 — 2026-08-26 — pdflatex fails after layering texlive: format file / ls-R database out of sync
+
+**Area:** rpm-ostree
+
+**Symptom:** After rebooting into a deployment with `texlive-scheme-basic` +
+`texlive-lato` freshly layered (see I027-adjacent handover), `pdflatex
+--version` worked, but compiling an actual document failed:
+
+```
+I can't find the format file `pdflatex.fmt'!
+```
+
+Running `mktexfmt pdflatex.fmt` or `fmtutil-user --byfmt pdflatex` reported
+`Did not find entry for byfmt=pdflatex skipped` even though
+`/usr/share/texlive/texmf-dist/web2c/fmtutil.cnf` demonstrably contains an
+enabled `pdflatex` entry. `kpsewhich fmtutil.cnf` returned nothing at all.
+
+**Cause:** `/usr/share/texlive/texmf-dist/ls-R` (kpathsea's filename
+database) predates the regeneration of `fmtutil.cnf` — Fedora's
+`generate-fmtutilcnf` reruns during the ostree deployment finalize step and
+rewrites `fmtutil.cnf`, but nothing re-triggers `mktexlsr` afterward, so
+`ls-R` still lists only `fmtutil-hdr.cnf`, `fmtutil.pl`, etc., not the
+regenerated `fmtutil.cnf` itself. Normally kpathsea would notice `ls-R` is
+older than the tree and fall back to disk-scanning, but rpm-ostree/ostree
+normalizes every file's mtime to the epoch (1970-01-01) for reproducible
+content-addressed storage, so `ls-R` and `fmtutil.cnf` carry the *same*
+mtime — kpathsea's staleness check never fires. `/usr` in the live
+deployment is also read-only, so `mktexlsr` (as root, via `pkexec`) fails
+outright with "directory not writable" — this can't be fixed in place at
+all, only worked around.
+
+**Fix:** Build a per-user `fmtutil.cnf` override in the writable
+`TEXMFCONFIG` user tree (`~/.texlive2026/texmf-config/web2c/fmtutil.cnf`,
+no stale `ls-R` there since it's a fresh directory kpathsea disk-scans
+directly), then build the format under `fmtutil-user`:
+
+```
+mkdir -p ~/.texlive2026/texmf-config/web2c
+cat > ~/.texlive2026/texmf-config/web2c/fmtutil.cnf <<'EOF'
+pdflatex pdftex language.dat -translate-file=cp227.tcx *pdflatex.ini
+latex pdftex language.dat -translate-file=cp227.tcx *latex.ini
+pdftex pdftex language.def -translate-file=cp227.tcx *pdfetex.ini
+etex pdftex language.def -translate-file=cp227.tcx *etex.ini
+EOF
+fmtutil-user --byfmt pdflatex
+```
+
+This also means the pattern will very likely recur for any future
+`texlive-*` package layered on this image (new `.sty`/`.cls` files under a
+stale-but-same-mtime `ls-R` won't be found by kpathsea either) — not just
+`fmtutil.cnf`/format-building. The general symptom to watch for is
+"file demonstrably exists on disk but `kpsewhich`/LaTeX can't find it"
+right after a texlive package layer + reboot.
+
+**Tried first:**
+- `pkexec rpm-ostree install ...; systemctl reboot` alone, assuming the
+  deployment finalize step (which clearly does run `generate-fmtutilcnf`,
+  per its file header timestamp) also handles `mktexlsr` — it does not.
+- `pkexec fmtutil-sys --byfmt pdflatex` (root, system-wide format) — failed
+  with `mkdir(/var/lib/texmf/web2c/) failed: Permission denied`, a red
+  herring that looked like a plain permissions issue rather than the real
+  read-only-`/usr` + stale-database problem underneath.
+- `fmtutil-user --byfmt pdflatex` with no config override — silently
+  reported "0 formats" instead of erroring, which delayed noticing the real
+  cause (`ls-R` staleness) since the failure mode looked like a missing
+  package rather than a database bug.
+- `pkexec mktexlsr` — the actually-correct general fix for a stale `ls-R`,
+  but fails because `/usr/share/texlive/*` is part of the read-only ostree
+  deployment; confirmed the workaround has to live in the user tree, not
+  the system tree.
+
+**Reversibility:** `/var/home` backup (kopia) covers the new
+`~/.texlive2026/texmf-config/web2c/fmtutil.cnf` file; nothing under `/etc`
+or the OS image was touched by the fix itself (the earlier `texlive-*`
+package layering is covered separately by `rpm-ostree rollback`).
+
+**Captured in:** not yet — still a one-off. If this recurs on the next
+`texlive-*` package layer, worth scripting the user-tree `fmtutil.cnf`
+workaround into `hosts/<slug>/quirks.sh` or a small
+`scripts/texlive-fmtutil-fix.sh` rather than re-deriving it by hand again.
+
+**Follow-up (same day, after reboot with `texlive-parskip` layered):** the
+predicted recurrence happened, but in a different file class than expected.
+`parskip.sty` itself resolved fine (`kpsewhich` found it — the `.sty` files
+were apparently covered by the fix above or never affected). Instead,
+`pdflatex` failed at font-mapping time:
+
+```
+gsftopk: fatal: map file `psfonts.map' not found.
+mktexpk: don't know how to create bitmap font for Lato-Bold-T1-TLF--base.
+!pdfTeX error: pdflatex (file Lato-Bold-T1-TLF--base): Font Lato-Bold-T1-TLF--base at 600 not found
+```
+
+`kpsewhich pdftex.map` and `kpsewhich psfonts.map` both returned nothing,
+and neither file existed anywhere under `/usr/share/texlive` — these aren't
+static files shipped in the package, they're generated by `updmap` from
+each font package's map fragments, and nothing regenerates them after a
+`texlive-*` layer + reboot (same missing-post-finalize-step pattern as
+`mktexlsr` above, just for `updmap` instead). `TEXMFSYSVAR` is
+`/var/lib/texmf`, which is writable (`/var`, not `/usr`), but nothing runs
+`updmap-sys` to populate it automatically either.
+
+**Fix:** same user-tree pattern as the format-file fix — run the user
+variant instead of relying on system generation:
+
+```
+updmap-user
+```
+
+This wrote generated map files under
+`~/.texlive2026/texmf-var/fonts/map/{pdftex,dvips,dvipdfmx}/updmap/` and
+updated that tree's own `ls-R` (fresh, so no staleness problem). Re-running
+`pdflatex` immediately after succeeded — clean 1-page PDF, no missing-font
+fallback.
+
+**Generalized takeaway:** any `texlive-*` layer that adds new fonts, formats,
+or map entries needs *two* user-tree regeneration steps after the reboot,
+not one: `fmtutil-user --byfmt <engine>` (formats) and `updmap-user` (font
+maps) — both because the corresponding system-tree generation step doesn't
+rerun on ostree finalize, and because `/usr` is read-only so there's no
+fixing it in the system tree even by hand. Worth scripting both into a
+single `scripts/texlive-user-refresh.sh` run once after any texlive layer +
+reboot, rather than rediscovering each generator separately per incident.
+
+**Tally:** time-to-fix ~25m (fmtutil) + ~10m (updmap, same-day follow-up) ·
+first proposal: wrong (both times — reached for the system-level tool
+before realizing the user-tree override was required)
