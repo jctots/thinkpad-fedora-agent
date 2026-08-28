@@ -119,15 +119,26 @@ systemctl --user restart tb-bridge.service   # only if already running
 
 ### 4. Wrap the credential for second-brain's MCP client
 
+**As of D153, `tb-mcp-authed` sources `~/.config/second-brain/second-brain.env`**
+(a file second-brain's own tooling manages), not
+`~/.config/thunderbird-cli/bridge-daemon.env` directly — the two are
+separate files that must carry the *same* `TB_AUTH_TOKEN` value. If step 2
+above regenerates the token in `bridge-daemon.env` (e.g. after a rebuild or
+an I029-style credential loss), `second-brain.env` needs the matching value
+copied in too, or second-brain's `tb-mcp` calls will get `401`s against a
+healthy bridge — see I030.
+
 ```bash
 mkdir -p ~/.local/bin
 umask 077
 cat > ~/.local/bin/tb-mcp-authed <<'EOF'
 #!/bin/sh
-# Launches tb-mcp with the bridge credential loaded from its 600 env file, so the
-# token never appears in a command line (/proc/<pid>/cmdline is world-readable).
+# Launches tb-mcp with the bridge credential loaded from the vault's shared
+# secrets file, so the token never appears in a command line (/proc/<pid>/cmdline
+# is world-readable). Consolidated from a dedicated bridge-daemon.env onto the
+# shared file per second-brain-setup D153.
 set -a
-. "$HOME/.config/thunderbird-cli/bridge-daemon.env"
+. "$HOME/.config/second-brain/second-brain.env"
 set +a
 exec node "$HOME/.npm-global/bin/tb-mcp" "$@"
 EOF
@@ -158,6 +169,17 @@ journalctl --user -u tb-bridge.service | grep Auth:
 If (1) instead succeeds, the env file isn't wired to the unit, or the
 running bridge binary predates the auth patch (check `npm ls -g` for a
 symlink arrow, per step 1).
+
+## Standing health check
+
+`tb-bridge.service` is a `static` unit — started on demand by
+`betterbird-with-bridge`, never at boot/login — so a crash-loop (I029) can
+sit silent between sessions with nothing surfacing it. Since I030,
+`hosts/thinkpad-e14-gen5/tb-bridge-status.sh check` runs every 15 minutes
+via `tb-bridge-status.timer` and fires a GNOME notification only on a
+genuine failure (unit `failed`, or Betterbird running with the bridge not
+active) — silent otherwise. Re-run `tb-bridge-status.sh install` if the
+timer is ever missing after a rebuild.
 
 ## This is not isolation — say so, always
 
