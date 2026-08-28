@@ -69,6 +69,12 @@ has neither problem.
    scripts/
      PACKAGES.md         narrated companion to the flatpak/package scripts, if any
      *.sh                flat, idempotent, report-only — same contract as scripts/
+   health-checks/         optional — picked up by this repo's
+                         scripts/system-health-check.sh if EXTRAS_DIR is set,
+                         same exit-code contract as scripts/health-checks/ and
+                         hosts/<slug>/health-checks/. For personal app/workflow
+                         checks (a specific device's sync mount, a personal
+                         service) that don't belong in the public timer.
    hosts/<slug>/         only once this repo runs on more than one machine —
                          same slug as this repo's own hosts/<slug>/. Most
                          personal app/config choices travel with the person,

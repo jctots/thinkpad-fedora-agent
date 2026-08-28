@@ -8,8 +8,10 @@
 # without each reinventing its own timer/notification/logging.
 #
 # Check contract: every executable under `scripts/health-checks/*.sh` (base,
-# any machine) and `hosts/<slug>/health-checks/*.sh` (host-specific quirks)
-# is run with no arguments. Exit 0 = healthy — stdout is still logged but no
+# any machine), `hosts/<slug>/health-checks/*.sh` (host-specific quirks),
+# and — if EXTRAS_DIR is set — `EXTRAS_DIR/health-checks/*.sh` (personal
+# app/workflow checks, kept out of this public repo per docs/extras.md) is
+# run with no arguments. Exit 0 = healthy — stdout is still logged but no
 # notification fires. Exit 1 = alert — stdout becomes the notification body
 # and fires `notify-send`. Anything else is treated as the check itself
 # being broken and is reported as an alert with that distinction noted.
@@ -32,10 +34,18 @@ UNIT_DIR="${HOME}/.config/systemd/user"
 LOG_DIR="${HOME}/.local/state/system-health-check"
 HOST_SLUG="thinkpad-e14-gen5"
 
+if [ -f "$REPO_ROOT/local/secrets.env" ]; then
+  # shellcheck disable=SC1091
+  . "$REPO_ROOT/local/secrets.env"
+fi
+
 CHECK_DIRS=(
   "${REPO_ROOT}/scripts/health-checks"
   "${REPO_ROOT}/hosts/${HOST_SLUG}/health-checks"
 )
+if [ -n "${EXTRAS_DIR:-}" ] && [ "$EXTRAS_DIR" != "PLACEHOLDER" ]; then
+  CHECK_DIRS+=("${EXTRAS_DIR}/health-checks")
+fi
 
 cmd="${1:-run}"
 

@@ -1,0 +1,26 @@
+## I032 — 2026-08-28 — GSConnect phone sftp mount goes stale, unreadable in Files
+
+**Area:** gnome
+
+**Symptom:** GSConnect's "mount" for the Pixel 9 showed as mounted (`gio mount -l` listed `sftp://<phone-lan-ip>:1739/`), but opening it in Files failed. Two distinct failures stacked: (1) `gio list` on that same URI returned `The specified location is not mounted` even though the mount tracker still listed it; after clearing that, (2) browsing the mount's root in Files gave "This location could not be displayed. You do not have the permissions necessary."
+
+**Cause:** Two unrelated bugs, not one:
+1. **Stale mount registration** — `gvfsd-sftp` had three stacked `ssh` subprocesses under one PID, one missing the `-l kdeconnect` login argument entirely — evidence of a failed/retried mount attempt that was never cleaned up (screen lock, wifi blip, or phone-side KDE Connect service restart can trigger this). The gvfs mount tracker kept the ghost entry even though the underlying SFTP session was dead.
+2. **Android scoped storage** — the SFTP root itself is permission-denied by the phone's OS (Android 11+ scoped storage), unrelated to GSConnect/gvfs. The browsable path is `storage/emulated/0` (aka `sdcard`, aka `storage/self/primary` — all three resolve to the same internal-storage root).
+
+**Fix:**
+- Clear a stale mount: `pkill -f gvfsd-sftp` (safe — per-session user daemon, respawns on next mount, no system state).
+- Browse the phone at `sftp://<ip>:<port>/storage/emulated/0`, never the bare root.
+- GSConnect's SFTP plugin already has `automount` (schema `org.gnome.Shell.Extensions.GSConnect.Plugin.SFTP`, dconf key `.../device/<id>/plugin/sftp/automount`) defaulting to `true`. In practice it only fires `mount()` on a fresh KDE Connect channel-connect event — killing the gvfs mount externally (as the health check does) doesn't make GSConnect notice and re-mount, since its own plugin state still thinks it's mounted. A manual click of "Mount" in the GSConnect device menu remains the reliable trigger; automount handles the normal case (screen unlock, phone back in range) where the channel actually reconnects.
+- Added a `scripts/health-checks/`-style pluggable hook: `system-health-check.sh` now also loads `EXTRAS_DIR/health-checks/*.sh` (only if `EXTRAS_DIR` is set, sourced from `local/secrets.env`), same exit-code contract as the existing dirs — keeps this personal-app check out of the public repo per `docs/extras.md`.
+- `thinkpad-fedora-extras/health-checks/gsconnect-mount.sh`: silently exits 0 when no mount is registered (normal most of the day); when a mount is registered, tests the actual browsable subpath (`storage/emulated/0`), not the root (see near-miss below); on broken, kills `gvfsd-sftp` and exits 1 (alert); on healthy, syncs a single Nautilus bookmark (`~/.config/gtk-3.0/bookmarks`) to `sftp://<current-ip>:<current-port>/storage/emulated/0`, replacing any stale-port entry, so the phone shows up as a stable, always-correct clickable row in Files' sidebar — the mount's own root can't do this itself (gvfs `GDaemonMount` network locations don't get a persistent sidebar "Devices" entry the way the existing rclone/UDisks2 cloud mounts do, and even if they did, the entry would point at the permission-denied root, not the subpath).
+
+**Tried first:**
+- Scripting GSConnect's internal per-device D-Bus `Mount()` trigger, to force a fresh mount without a manual click. Generic `Introspectable` on the device's object path came back empty — turned out GSConnect exports each device as a standard `org.gtk.Actions`/`org.gtk.Menus` action group (`Gio.DBus.session.export_action_group`) under its own bus name `org.gnome.Shell.Extensions.GSConnect` (not `org.gnome.Shell`), reachable via `gdbus call --dest org.gnome.Shell.Extensions.GSConnect --object-path /org/gnome/Shell/Extensions/GSConnect/Device/<id> --method org.gtk.Actions.List` — a documented GTK protocol, not a reverse-engineered internal, and it does list `mount`/`unmount` among the device's actions. Found this only after first guessing wrong (checking `org.gnome.Shell`, and assuming the lack of static Introspectable XML meant no public API existed at all). Ended up not needed: the real gap was mount *visibility*, not mount *triggering* — the bookmark-sync approach solves that without needing to fire mount() at all.
+- First version of `gsconnect-mount.sh` tested `gio list` against the mount **root**, not the subpath. Root is always permission-denied by Android regardless of mount health, so every run — including against a perfectly healthy mount — would have reported "broken" and killed `gvfsd-sftp` on every 15-minute tick. Caught before the check ever ran against a live mount (the first live test happened to hit the "no mount" branch); fixed to test `storage/emulated/0` instead.
+
+**Reversibility:** `/var/home` — `scripts/system-health-check.sh` and the new `thinkpad-fedora-extras/health-checks/gsconnect-mount.sh` are both plain files in git-tracked repos, and `pkill -f gvfsd-sftp` only kills a per-session user daemon (no `/etc` or OS-image state touched).
+
+**Captured in:** `scripts/system-health-check.sh` (EXTRAS_DIR hook), `thinkpad-fedora-extras/health-checks/gsconnect-mount.sh`
+
+**Tally:** time-to-fix ~40m · first proposal: wrong
