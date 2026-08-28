@@ -58,11 +58,26 @@
 # module is currently in active use by GNOME Shell/Xorg/Wayland can't be
 # cleanly unloaded live — a 'rmmod' would fail with 'in use' or destabilize
 # the running session rather than switching drivers underneath it.
+#
+# /etc/modprobe.d alone does NOT block nouveau on this host: nouveau.ko.xz
+# is baked into the initramfs for early KMS (plymouth splash), and dracut's
+# own copy of /etc/modprobe.d — snapshotted at initramfs-build time — never
+# sees a rule written after that build. Confirmed live: the 'nvidia' mode
+# conf (install nouveau /bin/false) was in place and etckeeper-committed,
+# yet nouveau still bound the GPU at boot and nvidia's probe failed with
+# "GPU already bound to nouveau" (I034). Fix: dracut has its own cmdline
+# override, rd.driver.blacklist=<mod>, read directly inside the initrd
+# regardless of what /etc/modprobe.d says — set via `rpm-ostree kargs` so
+# it's baked into the boot entry itself, no initramfs rebuild required.
+# Applied for 'off' and 'nvidia' modes (both need nouveau kept out);
+# removed for 'nouveau' mode. Reversible the same way any kargs change is:
+# `rpm-ostree kargs --delete=...` or `rpm-ostree rollback`.
 set -euo pipefail
 
 CONF_FILE="/etc/modprobe.d/dgpu-driver-select.conf"
 OLD_CONF_FILE="/etc/modprobe.d/nvidia-disabled.conf"
 STEAM_APP="com.valvesoftware.Steam"
+NOUVEAU_KARG="rd.driver.blacklist=nouveau"
 
 NVIDIA_MODULES=(nvidia nvidia_drm nvidia_modeset nvidia_uvm)
 
@@ -88,6 +103,28 @@ usage() {
 
 module_loaded() {
   grep -q "^$1 " /proc/modules
+}
+
+karg_present() {
+  rpm-ostree kargs 2>/dev/null | grep -qw -- "$NOUVEAU_KARG"
+}
+
+sync_nouveau_karg() {
+  # $1 = mode. Keeps the rd.driver.blacklist=nouveau kernel arg in sync
+  # with the selected mode — needed because dracut loads nouveau inside
+  # the initrd itself, before /etc/modprobe.d is ever consulted.
+  local want=0
+  case "$1" in
+    off|nvidia) want=1 ;;
+  esac
+  local have=0
+  karg_present && have=1
+
+  if [ "$want" = 1 ] && [ "$have" = 0 ]; then
+    pkexec rpm-ostree kargs --append="$NOUVEAU_KARG"
+  elif [ "$want" = 0 ] && [ "$have" = 1 ]; then
+    pkexec rpm-ostree kargs --delete="$NOUVEAU_KARG"
+  fi
 }
 
 steam_installed() {
@@ -151,9 +188,12 @@ write_conf() {
     esac
   } > "$tmp"
 
+  # etckeeper commit exits non-zero when there's nothing to commit (e.g.
+  # re-running the same mode) — that's not a failure, so don't let it abort
+  # the chain under set -e; install/rm having succeeded is what matters.
   pkexec bash -c "install -m 0644 -o root -g root '$tmp' '$CONF_FILE' && \
     rm -f '$OLD_CONF_FILE' && \
-    etckeeper commit 'gpu-toggle.sh: select $1 dGPU mode'"
+    { etckeeper commit 'gpu-toggle.sh: select $1 dGPU mode' || true; }"
 }
 
 cmd="${1:-status}"
@@ -178,6 +218,21 @@ case "$cmd" in
     fi
     echo "Selected mode: $mode"
 
+    want_karg=0
+    case "$mode" in
+      off|nvidia) want_karg=1 ;;
+    esac
+    if karg_present; then
+      have_karg=1
+    else
+      have_karg=0
+    fi
+    if [ "$want_karg" = "$have_karg" ]; then
+      echo "nouveau initrd blacklist karg: $([ "$have_karg" = 1 ] && echo present || echo absent) (matches mode)"
+    else
+      echo "nouveau initrd blacklist karg: $([ "$have_karg" = 1 ] && echo present || echo absent) (MISMATCH — expected $([ "$want_karg" = 1 ] && echo present || echo absent); run '$0 $mode' again or reboot if just changed)"
+    fi
+
     for m in nvidia nouveau; do
       if module_loaded "$m"; then
         echo "$m module: loaded this boot"
@@ -195,6 +250,7 @@ case "$cmd" in
     ;;
   off|nvidia|nouveau)
     write_conf "$cmd"
+    sync_nouveau_karg "$cmd"
     set_steam_env "$cmd"
     echo "Done. Reboot to take effect: systemctl reboot"
     ;;
