@@ -174,12 +174,14 @@ symlink arrow, per step 1).
 
 `tb-bridge.service` is a `static` unit — started on demand by
 `betterbird-with-bridge`, never at boot/login — so a crash-loop (I029) can
-sit silent between sessions with nothing surfacing it. Since I030,
-`hosts/thinkpad-e14-gen5/tb-bridge-status.sh check` runs every 15 minutes
-via `tb-bridge-status.timer` and fires a GNOME notification only on a
+sit silent between sessions with nothing surfacing it. Since I030, the
+`tb-bridge` module of `scripts/system-health-check.sh` (a pluggable runner,
+not tb-bridge-specific — see that script and
+`hosts/thinkpad-e14-gen5/health-checks/tb-bridge.sh`) runs every 15 minutes
+via `system-health-check.timer` and fires a GNOME notification only on a
 genuine failure (unit `failed`, or Betterbird running with the bridge not
-active) — silent otherwise. Re-run `tb-bridge-status.sh install` if the
-timer is ever missing after a rebuild.
+active) — silent otherwise. Re-run `scripts/system-health-check.sh install`
+if the timer is ever missing after a rebuild.
 
 ## This is not isolation — say so, always
 

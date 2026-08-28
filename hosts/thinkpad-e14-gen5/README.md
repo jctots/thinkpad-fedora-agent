@@ -174,11 +174,11 @@ are present for the currently running driver version.
 
 Setup steps, MOK enrolment sequence, and current status: `quirks.sh`.
 
-### GPU on/off toggle (I019): s2idle isolation, gaming-only dGPU
+### GPU driver select (I019): off / nvidia / nouveau, gaming-only dGPU
 
-s2idle suspend fails **100% of the time** on driver 610.57.04, confirmed as
-an open upstream bug — GSP firmware fails to unload during suspend
-(`NVRM: PM suspend notifier failed: 0x62`), matching
+s2idle suspend fails **100% of the time** on the proprietary driver
+(610.57.04), confirmed as an open upstream bug — GSP firmware fails to
+unload during suspend (`NVRM: PM suspend notifier failed: 0x62`), matching
 [NVIDIA/open-gpu-kernel-modules#1142](https://github.com/NVIDIA/open-gpu-kernel-modules/issues/1142)
 exactly. It is independent of local config — I018's suspend-OOM mitigation
 (`NVreg_TemporaryFilePath`) was tried and reverted (see I019); it only
@@ -189,29 +189,70 @@ Since the `nvidia` module normally loads at every boot regardless of
 whether the dGPU is actually rendering anything (PRIME offload is opt-in
 per-app), the module being loaded at all is what exposes the suspend path
 to this bug — even a session that never touches the dGPU still hits it.
-`hosts/thinkpad-e14-gen5/gpu-toggle.sh` blacklists/unblacklists the module
-so it can be switched off by default and only switched on for a gaming
-session:
+Blacklisting `nvidia` alone does not idle the dGPU, though: the kernel's
+in-tree `nouveau` driver auto-binds to the same PCI device the moment
+`nvidia` is out of the way (confirmed live on this host — `lspci -k` showed
+`Kernel driver in use: nouveau` while `nvidia` sat blacklisted and unloaded).
+So `hosts/thinkpad-e14-gen5/gpu-toggle.sh` is a three-way driver select, not
+a toggle:
 
 ```
 hosts/thinkpad-e14-gen5/gpu-toggle.sh status    # report only
-hosts/thinkpad-e14-gen5/gpu-toggle.sh disable   # blacklist — for s2idle testing / daily use
-hosts/thinkpad-e14-gen5/gpu-toggle.sh enable    # unblacklist — before gaming
+hosts/thinkpad-e14-gen5/gpu-toggle.sh off       # blacklist both — iGPU only, s2idle testing / daily use
+hosts/thinkpad-e14-gen5/gpu-toggle.sh nvidia    # proprietary — CUDA + nvidia-smi/nvtop, carries the I019 bug
+hosts/thinkpad-e14-gen5/gpu-toggle.sh nouveau   # in-tree open driver — no CUDA/NVML, expected not to carry I019
 ```
 
-Both directions print the exact `pkexec`/`etckeeper`/reboot commands rather
-than running them — same report-only pattern as `quirks.sh`. A reboot is
-required either direction; the module can't be cleanly hot-unloaded while
-GNOME Shell/Xorg/Wayland holds it open. Reversible via `/etc`
-(`etckeeper` commit each direction).
+`enable`/`disable` remain as aliases for `nvidia`/`nouveau` respectively —
+the two modes those names used to cover, before `off` needed splitting out
+as its own mode — since I019 through I021 reference them by those names.
 
-While disabled: `nvidia-smi`/`nvtop` will report no device, Steam's
-`__NV_PRIME_RENDER_OFFLOAD`/`__GLX_VENDOR_LIBRARY_NAME=nvidia` overrides
-become no-ops (same fallback-to-Mesa behavior documented above for
-nouveau), and the machine runs on the Intel iGPU only. `quirks.sh` does
-**not** currently flag the dGPU as "missing" while it's deliberately
-disabled — the toggle's `status` output is the source of truth for current
-intent, `quirks.sh` for whether the driver stack itself is intact.
+Each mode command also rewrites Steam's Flatpak env overrides Steam-wide
+(every game is a child process of Steam and inherits them), so a game
+launched right after a mode switch offloads correctly with no per-game
+launch-option edit: `nvidia` sets `__NV_PRIME_RENDER_OFFLOAD=1
+__GLX_VENDOR_LIBRARY_NAME=nvidia`; `nouveau` sets `DRI_PRIME=1` instead,
+since the `__NV_*` vars are proprietary-only and silently no-op under
+nouveau — confirmed the hard way in I005; `off` clears all of them since
+everything renders on the iGPU regardless. This step is skipped with a note
+(not a failure) if the Steam Flatpak isn't installed on the machine.
+
+A reboot is required for any mode change to fully take effect; the module
+currently in use can't be cleanly hot-swapped while GNOME
+Shell/Xorg/Wayland holds it open. Reversible via `/etc` (`etckeeper`
+commits each change).
+
+While in `off` or `nouveau` mode: `nvidia-smi`/`nvtop` will report no
+device — nouveau has no NVML equivalent, so GPU monitoring is only
+available in `nvidia` mode. `quirks.sh` does **not** currently flag the
+dGPU as "missing" while it's deliberately off — the toggle's `status`
+output is the source of truth for current intent, `quirks.sh` for whether
+the driver stack itself is intact.
+
+`health-checks/dgpu-power.sh` watches for the dGPU drawing power while
+`off` mode says it shouldn't be — it reads the same PCI runtime-PM status
+(`/sys/bus/pci/devices/0000:02:00.0/power/runtime_status`) that first
+exposed nouveau's silent auto-bind, and alerts if it isn't `suspended`
+after two consecutive 15-minute checks. Deliberately out of scope in
+`nvidia`/`nouveau` mode, where "active" is indistinguishable from a
+legitimate gaming session without per-process attribution.
+
+`health-checks/battery-drain.sh` is mode-aware for the same reason (I019
+follow-up: comparing nvidia-vs-nouveau battery drain). Every discharging
+sample is tagged with the current mode and appended to
+`~/.local/state/system-health-check/battery-drain-samples.log` regardless
+of whether it alerts, so switching modes and letting this run for a while
+under each produces a directly comparable dataset. The 35W alert threshold
+only applies in `off` mode, where it was calibrated — `nvidia`/`nouveau`
+modes log but don't alert, since higher draw there is expected, not a
+fault.
+
+**`nouveau` mode's suspend safety is expected, not verified** — nouveau
+doesn't use GSP firmware the same way the proprietary driver does, so it's
+a reasonable expectation it avoids I019's specific bug, but nobody has run
+an actual suspend/resume cycle with nouveau bound and active on this
+BIOS/kernel combo. Treat it as untested until a supervised suspend test
+confirms it.
 
 ## Xbox Wireless Controller (Bluetooth): two stacked bugs, both now fixed
 
